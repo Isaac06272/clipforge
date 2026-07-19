@@ -50,13 +50,4 @@ backend/
     export.js         export + re-export + placeholder download
 ```
 
-## Next steps toward the real pipeline
 
-1. Replace `jobStore.js`'s timer-based simulation with real steps: Whisper
-   transcription → highlight scoring → FFmpeg zoom/caption/crop rendering.
-2. Add real file upload handling (multer + local disk, or direct-to-S3).
-3. Persist jobs/history in a real database instead of the in-memory Map —
-   needed the moment you want history to survive a server restart or support
-   multiple users.
-4. Serve real rendered MP4s from `/api/download/:name` instead of the
-   placeholder text file.
