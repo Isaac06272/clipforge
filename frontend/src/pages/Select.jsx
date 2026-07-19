@@ -7,7 +7,6 @@ export default function Select() {
   const { candidates, selectedIds, toggleSelected, exportSelected } = useSession();
   const [exporting, setExporting] = useState(false);
 
-  // Dynamic assignment of server endpoint base URLs
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
   async function handleExport() {
@@ -28,9 +27,16 @@ export default function Select() {
         {selectedIds.size} {selectedIds.size === 1 ? "clip" : "clips"} selected
       </p>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3.5 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-5 mb-8">
         {candidates.map((c) => {
           const isSelected = selectedIds.has(c.id);
+          
+          // Determine the correct CSS shape based on the ratio returned from the server
+          const shapeClass = 
+            c.ratio === "9:16" ? "aspect-[9/16]" : 
+            c.ratio === "1:1" ? "aspect-square" : 
+            "aspect-video";
+
           return (
             <div
               key={c.id}
@@ -38,8 +44,8 @@ export default function Select() {
                 isSelected ? "border-accent" : "border-border-strong"
               }`}
             >
-              {/* Media Player Container Element */}
-              <div className="relative h-48 bg-surface-2 rounded-md overflow-hidden mb-2 border border-border">
+              {/* Dynamic Media Player Container */}
+              <div className={`relative bg-surface-2 rounded-md overflow-hidden mb-2 border border-border ${shapeClass}`}>
                 <video 
                   src={`${API_BASE_URL}${c.url}`}
                   className="w-full h-full object-cover"
@@ -50,7 +56,7 @@ export default function Select() {
                 <button
                   type="button"
                   onClick={() => toggleSelected(c.id)}
-                  className={`absolute top-1.5 right-1.5 w-6 h-6 rounded-full flex items-center justify-center text-xs border cursor-pointer transition-colors shadow-md ${
+                  className={`absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center text-sm border cursor-pointer transition-colors shadow-md ${
                     isSelected ? "bg-accent border-accent text-bg" : "border-text-secondary bg-black/60 text-white"
                   }`}
                 >

@@ -12,7 +12,6 @@ const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:63
   maxRetriesPerRequest: null,
 });
 
-// Ensure output directories exist inside worker runtime env
 const outputDir = path.join(__dirname, "outputs");
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
@@ -22,61 +21,70 @@ const worker = new Worker("video-jobs", async (job) => {
   const { fileName, filePath, ratio } = job.data;
   console.log(`[Worker] Starting rendering processes for file: ${fileName}`);
   
-  await job.updateProgress(15);
-  
-  // If no native file upload (like an un-downloaded YouTube URL link), supply a default sample
   const inputPath = filePath || path.join(__dirname, "uploads", fileName);
-  const outputFileName = `${job.id}_clip1.mp4`;
-  const outputPath = path.join(outputDir, outputFileName);
+  const generatedClips = [];
+  
+  // Create 3 separate clips sequentially (Starts at 0s, 10s, and 20s)
+  for (let i = 0; i < 3; i++) {
+    const outputFileName = `${job.id}_clip${i + 1}.mp4`;
+    const outputPath = path.join(outputDir, outputFileName);
+    const startTime = i * 10; 
+    
+    // Calculate progress (ranges from 10% to 90% across the 3 clips)
+    const baseProgress = 10 + (i * 25);
+    await job.updateProgress(baseProgress);
 
-  await job.updateProgress(45);
+    await new Promise((resolve, reject) => {
+      let command = ffmpeg(inputPath)
+        .seekInput(startTime)     
+        .setDuration(8)   
+        .outputOptions([
+          "-preset ultrafast", 
+          "-threads 2",        
+          "-crf 28"            
+        ]);
 
-  // Execute native FFmpeg operational processes asynchronously
-  await new Promise((resolve, reject) => {
-    let command = ffmpeg(inputPath)
-      .setStartTime(1)  // Extract starting at 1 second offset
-      .setDuration(8);  // Clean render window target of 8 seconds
+      // Step 1: Crop and Scale
+      let filterChain = "";
+      if (ratio === "9:16") {
+        filterChain = "crop=ih*(9/16):ih,scale=-2:720";
+      } else if (ratio === "1:1") {
+        filterChain = "crop=ih:ih,scale=720:720";
+      } else {
+        filterChain = "scale=-2:720";
+      }
 
-    // Calculate precision cropping metrics to execute vertical adjustments
-    if (ratio === "9:16") {
-      command = command.videoFilters("crop=ih*(9/16):ih");
-    } else if (ratio === "1:1") {
-      command = command.videoFilters("crop=ih:ih");
-    }
+      // Step 2: Add Subtitle Captions (Centered at the bottom)
+      // This creates a black box with white text over the video
+      const captionText = `Sample Caption Clip ${i + 1}`;
+      filterChain += `,drawtext=text='${captionText}':fontcolor=white:fontsize=36:box=1:boxcolor=black@0.6:boxborderw=10:x=(w-text_w)/2:y=h-(h/4)`;
 
-    command
-      .output(outputPath)
-      .on("start", (cmd) => console.log(`[FFmpeg] Firing pipeline context command: ${cmd}`))
-      .on("progress", (p) => {
-        // Increment progress dynamically within the rendering stage (range 45% - 90%)
-        const currentProgress = Math.min(45 + Math.floor((p.percent || 0) * 0.45), 90);
-        job.updateProgress(currentProgress).catch(() => {});
-      })
-      .on("end", () => {
-        console.log(`[FFmpeg] Successfully generated crop render asset output: ${outputPath}`);
-        resolve();
-      })
-      .on("error", (err) => {
-        console.error(`[FFmpeg Error]: Failed rendering pipeline processing execution`, err);
-        reject(err);
-      })
-      .run();
-  });
+      command
+        .videoFilters(filterChain)
+        .output(outputPath)
+        .on("end", () => resolve())
+        .on("error", (err) => {
+          console.error(`[FFmpeg Error on Clip ${i+1}]`, err);
+          reject(err);
+        })
+        .run();
+    });
+
+    // Save the generated clip data so the frontend can display it
+    generatedClips.push({
+      id: `${job.id}_clip${i + 1}`,
+      score: `${95 - (i * 4)}% match`, // Fake AI scores: 95%, 91%, 87%
+      duration: "0:08",
+      url: `/outputs/${outputFileName}`,
+      fileSlug: outputFileName,
+      ratio: ratio // Pass the ratio back so the UI knows what shape to draw
+    });
+  }
 
   await job.updateProgress(100);
+  console.log(`[Worker] Job ${job.id} finished 3 clips!`);
   
-  // Return parameters referencing the physical static files served over Express routes
-  return { 
-    clips: [
-      { 
-        id: `${job.id}_clip1`, 
-        score: "95% match", 
-        duration: "0:08", 
-        url: `/outputs/${outputFileName}`,
-        fileSlug: outputFileName
-      }
-    ] 
-  };
+  return { clips: generatedClips };
 }, { connection: redisConnection });
 
 console.log("FFmpeg Worker is initialized, connected to Redis, and waiting for jobs...");
