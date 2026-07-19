@@ -6,6 +6,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
+import ytdl from "@distube/ytdl-core"; // NEW: YouTube Downloader
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,10 +24,29 @@ if (!fs.existsSync(outputDir)) {
 }
 
 const worker = new Worker("video-jobs", async (job) => {
-  const { fileName, filePath, ratio } = job.data;
-  console.log(`[Worker] Starting rendering processes for file: ${fileName}`);
+  // NEW: We now extract mode, prompt, and youtubeUrl from the job data
+  const { fileName, filePath, ratio, mode, prompt, youtubeUrl } = job.data;
+  console.log(`[Worker] Starting rendering processes for job ${job.id}`);
   
-  const inputPath = filePath || path.join(__dirname, "uploads", fileName);
+  let inputPath = filePath;
+
+  // --- YOUTUBE DOWNLOAD LOGIC ---
+  if (youtubeUrl) {
+    console.log(`[Worker] Downloading YouTube video from: ${youtubeUrl}`);
+    inputPath = path.join(__dirname, "uploads", `${job.id}_youtube.mp4`);
+    
+    await new Promise((resolve, reject) => {
+      // We grab the lowest quality video to save bandwidth/time for the draft previews
+      ytdl(youtubeUrl, { quality: 'lowestvideo', filter: 'audioandvideo' })
+        .pipe(fs.createWriteStream(inputPath))
+        .on("finish", resolve)
+        .on("error", reject);
+    });
+    console.log(`[Worker] YouTube download complete.`);
+  } else if (!inputPath) {
+    inputPath = path.join(__dirname, "uploads", fileName);
+  }
+
   const generatedClips = [];
   
   for (let i = 0; i < 3; i++) {
@@ -39,16 +59,12 @@ const worker = new Worker("video-jobs", async (job) => {
     const audioPath = path.join(outputDir, audioFileName);
     const srtPath = path.join(outputDir, srtFileName);
     
-    // SMART CUTS: Randomize duration between 10 and 18 seconds
     const duration = Math.floor(Math.random() * 9) + 10; 
-    
-    // SMART CUTS: Stagger start times so it doesn't just pull the first 30 seconds
-    // Clip 1: ~0-5s | Clip 2: ~20-25s | Clip 3: ~40-45s
     const startTime = (i * 20) + Math.floor(Math.random() * 5); 
     
     await job.updateProgress(10 + (i * 25));
 
-    console.log(`[Clip ${i+1}] Extracting ${duration} seconds of audio starting at ${startTime}s...`);
+    console.log(`[Clip ${i+1}] Extracting audio...`);
     
     await new Promise((resolve, reject) => {
       ffmpeg(inputPath)
@@ -70,25 +86,23 @@ const worker = new Worker("video-jobs", async (job) => {
         displayName: audioFileName,
       });
 
-      console.log(`[Clip ${i+1}] Asking Gemini for strict SRT captions...`);
-      const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+      console.log(`[Clip ${i+1}] Asking Gemini for SRT captions...`);
+      const aiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
       
-      // STRICTER PROMPT: Forcing Gemini to behave exactly like a subtitle generator
-      const prompt = `Listen to this short audio clip. Generate a perfectly formatted SRT subtitle file for it. 
-      CRITICAL RULES:
-      1. Output ONLY the raw SRT format. Do not say "Here are your subtitles".
-      2. Start directly with the number '1'.
-      3. You MUST use the exact time format: 00:00:00,000 --> 00:00:04,000.
-      4. Break the text into short, punchy lines.`;
+      // --- CUSTOM MODE LOGIC ---
+      // If the user selected custom mode and typed a prompt, we inject it here!
+      const aiPrompt = mode === "prompt" && prompt
+        ? `Listen to this short audio clip. The user wants the video edited with this specific vibe/focus: "${prompt}". Keep their request in mind and generate a perfectly formatted SRT subtitle file for the clip. \nCRITICAL RULES:\n1. Output ONLY the raw SRT format.\n2. Start directly with the number '1'.\n3. You MUST use exact time format: 00:00:00,000 --> 00:00:04,000.\n4. Break the text into short, punchy lines.`
+        : `Listen to this short audio clip. Generate a perfectly formatted SRT subtitle file for it. \nCRITICAL RULES:\n1. Output ONLY the raw SRT format. Do not say "Here are your subtitles".\n2. Start directly with the number '1'.\n3. You MUST use the exact time format: 00:00:00,000 --> 00:00:04,000.\n4. Break the text into short, punchy lines.`;
       
-      const result = await model.generateContent([
+      const result = await aiModel.generateContent([
         {
           fileData: {
             mimeType: uploadResult.file.mimeType,
             fileUri: uploadResult.file.uri
           }
         },
-        prompt
+        aiPrompt
       ]);
       
       let transcription = result.response.text();
@@ -96,10 +110,6 @@ const worker = new Worker("video-jobs", async (job) => {
       
       if (transcription && transcription.trim().length > 0) {
         transcription = transcription.replace(/```srt\n?/gi, "").replace(/```\n?/g, "").trim();
-        
-        // LOGGING: This prints exactly what Gemini generated to your Render dashboard
-        console.log(`\n--- GEMINI RAW OUTPUT (Clip ${i+1}) ---\n${transcription}\n-----------------------------------\n`);
-        
         fs.writeFileSync(srtPath, transcription);
         hasSubtitles = true;
       }
@@ -128,9 +138,10 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // CAPTION FIX: Increased font size to 24, added a strong black outline so it pops on any background
+      // --- SUBTITLE SIZE AND POSITION FIX ---
+      // FontSize is now 14 (smaller). MarginV is 15 (pushed closer to the bottom edge).
       if (hasSubtitles) {
-        filterChain += `,subtitles=${srtPath}:force_style='FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=40'`;
+        filterChain += `,subtitles=${srtPath}:force_style='FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=15'`;
       }
 
       command
@@ -144,7 +155,6 @@ const worker = new Worker("video-jobs", async (job) => {
         .run();
     });
 
-    // Format the duration string nicely for the UI (e.g. "0:14")
     const formattedDuration = `0:${duration.toString().padStart(2, "0")}`;
 
     generatedClips.push({
@@ -160,8 +170,13 @@ const worker = new Worker("video-jobs", async (job) => {
     if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
   }
 
+  // If it was a downloaded YouTube video, clean it up so your server doesn't run out of storage
+  if (youtubeUrl && fs.existsSync(inputPath)) {
+     fs.unlinkSync(inputPath);
+  }
+
   await job.updateProgress(100);
-  console.log(`[Worker] Job ${job.id} finished 3 dynamic clips!`);
+  console.log(`[Worker] Job ${job.id} finished!`);
   
   return { clips: generatedClips };
 }, { connection: redisConnection });
