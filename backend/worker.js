@@ -6,7 +6,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAIFileManager } from "@google/generative-ai/server";
-import ytdl from "@distube/ytdl-core"; // NEW: YouTube Downloader
+import ytdl from "@distube/ytdl-core";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,105 +24,119 @@ if (!fs.existsSync(outputDir)) {
 }
 
 const worker = new Worker("video-jobs", async (job) => {
-  // NEW: We now extract mode, prompt, and youtubeUrl from the job data
   const { fileName, filePath, ratio, mode, prompt, youtubeUrl } = job.data;
-  console.log(`[Worker] Starting rendering processes for job ${job.id}`);
+  console.log(`[Worker] Starting Smart AI rendering for job ${job.id}`);
   
   let inputPath = filePath;
 
-  // --- YOUTUBE DOWNLOAD LOGIC ---
+  // 1. YOUTUBE DOWNLOADER
   if (youtubeUrl) {
-    console.log(`[Worker] Downloading YouTube video from: ${youtubeUrl}`);
+    console.log(`[Worker] Downloading YouTube video...`);
     inputPath = path.join(__dirname, "uploads", `${job.id}_youtube.mp4`);
-    
     await new Promise((resolve, reject) => {
-      // We grab the lowest quality video to save bandwidth/time for the draft previews
       ytdl(youtubeUrl, { quality: 'lowestvideo', filter: 'audioandvideo' })
         .pipe(fs.createWriteStream(inputPath))
         .on("finish", resolve)
         .on("error", reject);
     });
-    console.log(`[Worker] YouTube download complete.`);
   } else if (!inputPath) {
     inputPath = path.join(__dirname, "uploads", fileName);
   }
 
+  await job.updateProgress(15);
+
+  // 2. EXTRACT THE ENTIRE AUDIO FILE ONCE
+  const fullAudioFileName = `${job.id}_full_audio.mp3`;
+  const fullAudioPath = path.join(outputDir, fullAudioFileName);
+  
+  console.log(`[Worker] Extracting full audio track for Gemini analysis...`);
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .noVideo()
+      .output(fullAudioPath)
+      .on("end", resolve)
+      .on("error", reject)
+      .run();
+  });
+
+  await job.updateProgress(30);
+
+  // 3. UPLOAD AND ASK GEMINI TO ACT AS THE EDITOR
+  console.log(`[Worker] Uploading full audio to Gemini...`);
+  const uploadResult = await fileManager.uploadFile(fullAudioPath, {
+    mimeType: "audio/mp3",
+    displayName: fullAudioFileName,
+  });
+
+  let clipsData = [];
+  try {
+    console.log(`[Worker] Asking Gemini to find the best cuts...`);
+    
+    // We enforce JSON output so our code can read the timestamps perfectly
+    const aiModel = genAI.getGenerativeModel({ 
+      model: "gemini-2.5-flash",
+      generationConfig: { responseMimeType: "application/json" }
+    });
+    
+    const basePrompt = `You are an expert AI video editor. Listen to this entire audio track. Find the 3 best segments (10-20 seconds each) to turn into short-form viral clips.`;
+    
+    const modePrompt = mode === "prompt" && prompt
+      ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.`
+      : `CRITICAL INSTRUCTION: Find the most engaging, funny, or insightful highlights.`;
+
+    const schemaPrompt = `
+    Analyze the audio and return a JSON array containing exactly 3 clip objects.
+    Each object must have exactly these keys:
+    - "startTime": the start time of the clip in the original audio (in seconds, as a number).
+    - "duration": the length of the clip (in seconds, as a number, between 10 and 20).
+    - "score": a string representing how good the clip is (e.g. "98% match").
+    - "srt": The complete, valid SRT subtitle string for this specific clip. The SRT timestamps MUST reset to 00:00:00,000 for the beginning of the clip! Break the text into short, punchy lines.
+    `;
+
+    const finalInstruction = `${basePrompt}\n${modePrompt}\n${schemaPrompt}`;
+
+    const result = await aiModel.generateContent([
+      { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
+      finalInstruction
+    ]);
+    
+    // Parse the JSON array returned by Gemini
+    clipsData = JSON.parse(result.response.text());
+    console.log(`[Worker] Gemini successfully picked ${clipsData.length} clips!`);
+    
+  } catch (err) {
+    console.error("Gemini API Error or JSON Parse Error:", err.message);
+    throw new Error("Failed to generate smart clips from the AI.");
+  } finally {
+    // Always clean up the master audio file from Google's servers
+    await fileManager.deleteFile(uploadResult.file.name);
+    if (fs.existsSync(fullAudioPath)) fs.unlinkSync(fullAudioPath);
+  }
+
+  await job.updateProgress(60);
+
+  // 4. CUT THE VIDEO BASED ON GEMINI'S TIMESTAMPS
   const generatedClips = [];
   
-  for (let i = 0; i < 3; i++) {
+  // Loop through the exact choices Gemini made
+  for (let i = 0; i < clipsData.length; i++) {
+    const aiClip = clipsData[i];
     const clipBaseName = `${job.id}_clip${i + 1}`;
     const outputFileName = `${clipBaseName}.mp4`;
-    const audioFileName = `${clipBaseName}.mp3`;
     const srtFileName = `${clipBaseName}.srt`;
     
     const outputPath = path.join(outputDir, outputFileName);
-    const audioPath = path.join(outputDir, audioFileName);
     const srtPath = path.join(outputDir, srtFileName);
     
-    const duration = Math.floor(Math.random() * 9) + 10; 
-    const startTime = (i * 20) + Math.floor(Math.random() * 5); 
-    
-    await job.updateProgress(10 + (i * 25));
+    // Save Gemini's generated SRT into a real file for FFmpeg to read
+    fs.writeFileSync(srtPath, aiClip.srt);
 
-    console.log(`[Clip ${i+1}] Extracting audio...`);
-    
-    await new Promise((resolve, reject) => {
-      ffmpeg(inputPath)
-        .seekInput(startTime)
-        .setDuration(duration)
-        .noVideo()
-        .output(audioPath)
-        .on("end", resolve)
-        .on("error", reject)
-        .run();
-    });
-
-    console.log(`[Clip ${i+1}] Uploading audio to Gemini...`);
-    let hasSubtitles = false;
-
-    try {
-      const uploadResult = await fileManager.uploadFile(audioPath, {
-        mimeType: "audio/mp3",
-        displayName: audioFileName,
-      });
-
-      console.log(`[Clip ${i+1}] Asking Gemini for SRT captions...`);
-      const aiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      
-      // --- CUSTOM MODE LOGIC ---
-      // If the user selected custom mode and typed a prompt, we inject it here!
-      const aiPrompt = mode === "prompt" && prompt
-        ? `Listen to this short audio clip. The user wants the video edited with this specific vibe/focus: "${prompt}". Keep their request in mind and generate a perfectly formatted SRT subtitle file for the clip. \nCRITICAL RULES:\n1. Output ONLY the raw SRT format.\n2. Start directly with the number '1'.\n3. You MUST use exact time format: 00:00:00,000 --> 00:00:04,000.\n4. Break the text into short, punchy lines.`
-        : `Listen to this short audio clip. Generate a perfectly formatted SRT subtitle file for it. \nCRITICAL RULES:\n1. Output ONLY the raw SRT format. Do not say "Here are your subtitles".\n2. Start directly with the number '1'.\n3. You MUST use the exact time format: 00:00:00,000 --> 00:00:04,000.\n4. Break the text into short, punchy lines.`;
-      
-      const result = await aiModel.generateContent([
-        {
-          fileData: {
-            mimeType: uploadResult.file.mimeType,
-            fileUri: uploadResult.file.uri
-          }
-        },
-        aiPrompt
-      ]);
-      
-      let transcription = result.response.text();
-      await fileManager.deleteFile(uploadResult.file.name);
-      
-      if (transcription && transcription.trim().length > 0) {
-        transcription = transcription.replace(/```srt\n?/gi, "").replace(/```\n?/g, "").trim();
-        fs.writeFileSync(srtPath, transcription);
-        hasSubtitles = true;
-      }
-    } catch (err) {
-      console.error("Gemini API Error:", err.message);
-    }
-
-    console.log(`[Clip ${i+1}] Rendering final video...`);
+    console.log(`[Clip ${i+1}] Rendering AI choice: Start ${aiClip.startTime}s, Duration ${aiClip.duration}s`);
 
     await new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath)
-        .seekInput(startTime)     
-        .setDuration(duration)   
+        .seekInput(aiClip.startTime) // Cut exactly where Gemini told us to!
+        .setDuration(aiClip.duration)   
         .outputOptions([
           "-preset ultrafast", 
           "-threads 2",        
@@ -138,47 +152,42 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // --- SUBTITLE SIZE AND POSITION FIX ---
-      // FontSize is now 14 (smaller). MarginV is 15 (pushed closer to the bottom edge).
-      if (hasSubtitles) {
-        filterChain += `,subtitles=${srtPath}:force_style='FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=15'`;
-      }
+      // Add the perfectly synced AI subtitles
+      filterChain += `,subtitles=${srtPath}:force_style='FontSize=14,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=15'`;
 
       command
         .videoFilters(filterChain)
         .output(outputPath)
-        .on("end", () => resolve())
-        .on("error", (err) => {
-          console.error(`[FFmpeg Error on Clip ${i+1}]`, err.message);
-          reject(err);
-        })
+        .on("end", resolve)
+        .on("error", reject)
         .run();
     });
 
-    const formattedDuration = `0:${duration.toString().padStart(2, "0")}`;
+    const formattedDuration = `0:${Math.round(aiClip.duration).toString().padStart(2, "0")}`;
 
     generatedClips.push({
       id: clipBaseName,
-      score: `${95 - (i * 4)}% match`,
+      score: aiClip.score || `${95 - (i * 2)}% match`,
       duration: formattedDuration,
       url: `/outputs/${outputFileName}`,
       fileSlug: outputFileName,
       ratio: ratio 
     });
     
-    if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
+    
+    // Update progress dynamically as each clip finishes
+    await job.updateProgress(60 + Math.floor(((i + 1) / clipsData.length) * 40));
   }
 
-  // If it was a downloaded YouTube video, clean it up so your server doesn't run out of storage
   if (youtubeUrl && fs.existsSync(inputPath)) {
      fs.unlinkSync(inputPath);
   }
 
   await job.updateProgress(100);
-  console.log(`[Worker] Job ${job.id} finished!`);
+  console.log(`[Worker] Job ${job.id} completely finished!`);
   
   return { clips: generatedClips };
 }, { connection: redisConnection });
 
-console.log("FFmpeg Gemini AI Worker is online and waiting for jobs...");
+console.log("FFmpeg Master AI Editor Worker is online and waiting for jobs...");
