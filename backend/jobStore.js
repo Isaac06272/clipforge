@@ -1,58 +1,50 @@
-// In-memory store standing in for a real job queue (e.g. BullMQ + Redis).
-// Each job simulates the 4 processing steps over a fixed duration so the
-// frontend's polling has something real to show progress against.
+import { Queue } from "bullmq";
+import Redis from "ioredis";
 
-const STEP_COUNT = 4;
-const STEP_DURATION_MS = 1400; // time spent "in" each step
-const TOTAL_DURATION_MS = STEP_COUNT * STEP_DURATION_MS;
+// Connect to Render's Redis URL, or use local Redis if running on your PC
+const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379", {
+  maxRetriesPerRequest: null,
+});
 
-const jobs = new Map();
+// Create the processing queue
+export const videoQueue = new Queue("video-jobs", { connection: redisConnection });
 
-const CANDIDATE_POOL = [
-  { score: "92% match", duration: "0:38" },
-  { score: "87% match", duration: "0:51" },
-  { score: "84% match", duration: "0:29" },
-  { score: "79% match", duration: "1:04" },
-  { score: "75% match", duration: "0:44" },
-  { score: "71% match", duration: "0:33" },
-];
-
-export function createJob({ fileName, ratio, mode, prompt }) {
-  const id = `job_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  jobs.set(id, {
-    id,
-    fileName,
-    ratio,
-    mode,
-    prompt,
-    startedAt: Date.now(),
-  });
-  return id;
+export async function createJob({ fileName, ratio, mode, prompt, youtubeUrl }) {
+  const jobId = `job_${Date.now()}`;
+  
+  // Instantly drop the task into the background queue
+  await videoQueue.add(
+    "process-video", 
+    { fileName, ratio, mode, prompt, youtubeUrl }, 
+    { jobId }
+  );
+  
+  return jobId;
 }
 
-export function getJobStatus(id) {
-  const job = jobs.get(id);
+export async function getJobStatus(id) {
+  const job = await videoQueue.getJob(id);
   if (!job) return null;
 
-  const elapsed = Date.now() - job.startedAt;
-  const clampedElapsed = Math.min(elapsed, TOTAL_DURATION_MS);
-  const stepIndex = Math.min(Math.floor(clampedElapsed / STEP_DURATION_MS), STEP_COUNT - 1);
-  const progress = Math.round((clampedElapsed / TOTAL_DURATION_MS) * 100);
-  const done = elapsed >= TOTAL_DURATION_MS;
+  const state = await job.getState();
+  const progress = job.progress || 0;
+  
+  // Map our 100% progress integer back to the 4 UI steps your React app expects
+  const stepIndex = progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 100 ? 3 : 4;
 
   return {
-    status: done ? "done" : "processing",
-    stepIndex: done ? STEP_COUNT : stepIndex,
-    progress: done ? 100 : progress,
+    status: state === "completed" ? "done" : state === "failed" ? "error" : "processing",
+    stepIndex: state === "completed" ? 4 : stepIndex,
+    progress: state === "completed" ? 100 : progress,
   };
 }
 
-export function getJob(id) {
-  return jobs.get(id) || null;
-}
-
-export function getCandidatesForJob(id) {
-  // In a real build: pull from the transcript-scoring step's output for
-  // this specific job. Mocked here with a fixed pool.
-  return CANDIDATE_POOL.map((c, idx) => ({ id: `${id}_clip${idx}`, ...c }));
+export async function getCandidatesForJob(id) {
+  // In Phase 3, we will pull the real FFmpeg output here.
+  // For now, we return our placeholder pool so the UI doesn't break.
+  return [
+    { id: `${id}_clip1`, score: "92% match", duration: "0:38" },
+    { id: `${id}_clip2`, score: "87% match", duration: "0:51" },
+    { id: `${id}_clip3`, score: "84% match", duration: "0:29" },
+  ];
 }
