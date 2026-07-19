@@ -4,7 +4,8 @@ import ffmpeg from "fluent-ffmpeg";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleAIFileManager } from "@google/generative-ai/server";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,7 +14,9 @@ const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:63
   maxRetriesPerRequest: null,
 });
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Initialize Gemini instead of OpenAI
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
 const outputDir = path.join(__dirname, "outputs");
 if (!fs.existsSync(outputDir)) {
@@ -54,23 +57,52 @@ const worker = new Worker("video-jobs", async (job) => {
         .run();
     });
 
-    console.log(`[Clip ${i+1}] Asking Whisper for captions...`);
+    console.log(`[Clip ${i+1}] Uploading audio to Gemini...`);
+    let hasSubtitles = false;
 
-    // 2. Send to Whisper AI to generate real subtitles
+    // 2. Send to Gemini AI to generate real subtitles
     try {
-      const transcription = await openai.audio.transcriptions.create({
-        file: fs.createReadStream(audioPath),
-        model: "whisper-1",
-        response_format: "srt" // Whisper natively returns perfectly timed subtitle files!
+      // Gemini requires us to temporarily upload the file to their server first
+      const uploadResult = await fileManager.uploadFile(audioPath, {
+        mimeType: "audio/mp3",
+        displayName: audioFileName,
       });
-      fs.writeFileSync(srtPath, transcription);
+
+      console.log(`[Clip ${i+1}] Asking Gemini for SRT captions...`);
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      
+      // Explicitly instruct Gemini to only output raw SRT formatting
+      const prompt = "Transcribe this audio exactly. Output ONLY a valid SRT format subtitle file. Do not include any markdown blocks like ```srt or conversational text. Start directly with '1'.";
+      
+      const result = await model.generateContent([
+        {
+          fileData: {
+            mimeType: uploadResult.file.mimeType,
+            fileUri: uploadResult.file.uri
+          }
+        },
+        prompt
+      ]);
+      
+      let transcription = result.response.text();
+      
+      // Clean up the file from Google's servers to save your free storage quota
+      await fileManager.deleteFile(uploadResult.file.name);
+      
+      if (transcription && transcription.trim().length > 0) {
+        // Strip out markdown backticks just in case Gemini tries to format it as code
+        transcription = transcription.replace(/```srt\n?/gi, "").replace(/```\n?/g, "").trim();
+        
+        fs.writeFileSync(srtPath, transcription);
+        hasSubtitles = true;
+      } else {
+         console.log(`[Clip ${i+1}] Audio found, but no speech detected by Gemini.`);
+      }
     } catch (err) {
-      console.error("Whisper API Error (did you set your API key?):", err.message);
-      // Create a blank SRT file so the video doesn't crash if OpenAI fails
-      fs.writeFileSync(srtPath, ""); 
+      console.error("Gemini API Error (did you set your GEMINI_API_KEY?):", err.message);
     }
 
-    console.log(`[Clip ${i+1}] Rendering final video with burned captions...`);
+    console.log(`[Clip ${i+1}] Rendering final video...`);
 
     // 3. Render the video: Force true vertical aspect ratio AND burn subtitles
     await new Promise((resolve, reject) => {
@@ -84,8 +116,6 @@ const worker = new Worker("video-jobs", async (job) => {
         ]);
 
       // THE ASPECT RATIO FIX: 
-      // Scale height to 720 first, then crop the width to exactly 406 pixels. 
-      // This guarantees the MP4 file is physically 9:16, not just squished in CSS.
       let filterChain = "";
       if (ratio === "9:16") {
         filterChain = "scale=-1:720,crop=406:720";
@@ -95,9 +125,10 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // Add the real Whisper subtitles to the filter chain.
-      // Alignment=2 puts it at the bottom center.
-      filterChain += `,subtitles=${srtPath}:force_style='FontSize=22,PrimaryColour=&H00FFFFFF,Alignment=2,MarginV=30'`;
+      // Add the real Gemini subtitles to the filter chain if they exist
+      if (hasSubtitles) {
+        filterChain += `,subtitles=${srtPath}:force_style='FontSize=22,PrimaryColour=&H00FFFFFF,Alignment=2,MarginV=30'`;
+      }
 
       command
         .videoFilters(filterChain)
@@ -119,7 +150,7 @@ const worker = new Worker("video-jobs", async (job) => {
       ratio: ratio 
     });
     
-    // Cleanup the temp audio/srt files so we don't run out of disk space
+    // Cleanup the temp audio/srt files from your server disk
     if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
   }
@@ -130,4 +161,4 @@ const worker = new Worker("video-jobs", async (job) => {
   return { clips: generatedClips };
 }, { connection: redisConnection });
 
-console.log("FFmpeg AI Worker is online and waiting for jobs...");
+console.log("FFmpeg Gemini AI Worker is online and waiting for jobs...");
