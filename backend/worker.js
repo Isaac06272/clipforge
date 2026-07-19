@@ -71,7 +71,7 @@ const worker = new Worker("video-jobs", async (job) => {
       });
 
       console.log(`[Clip ${i+1}] Asking Gemini for strict SRT captions...`);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
       
       // STRICTER PROMPT: Forcing Gemini to behave exactly like a subtitle generator
       const prompt = `Listen to this short audio clip. Generate a perfectly formatted SRT subtitle file for it. 
