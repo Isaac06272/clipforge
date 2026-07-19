@@ -14,7 +14,6 @@ const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:63
   maxRetriesPerRequest: null,
 });
 
-// Initialize Gemini instead of OpenAI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
@@ -40,16 +39,21 @@ const worker = new Worker("video-jobs", async (job) => {
     const audioPath = path.join(outputDir, audioFileName);
     const srtPath = path.join(outputDir, srtFileName);
     
-    const startTime = i * 10; 
+    // SMART CUTS: Randomize duration between 10 and 18 seconds
+    const duration = Math.floor(Math.random() * 9) + 10; 
+    
+    // SMART CUTS: Stagger start times so it doesn't just pull the first 30 seconds
+    // Clip 1: ~0-5s | Clip 2: ~20-25s | Clip 3: ~40-45s
+    const startTime = (i * 20) + Math.floor(Math.random() * 5); 
+    
     await job.updateProgress(10 + (i * 25));
 
-    console.log(`[Clip ${i+1}] Extracting audio...`);
+    console.log(`[Clip ${i+1}] Extracting ${duration} seconds of audio starting at ${startTime}s...`);
     
-    // 1. Extract audio for the AI
     await new Promise((resolve, reject) => {
       ffmpeg(inputPath)
         .seekInput(startTime)
-        .setDuration(8)
+        .setDuration(duration)
         .noVideo()
         .output(audioPath)
         .on("end", resolve)
@@ -60,19 +64,22 @@ const worker = new Worker("video-jobs", async (job) => {
     console.log(`[Clip ${i+1}] Uploading audio to Gemini...`);
     let hasSubtitles = false;
 
-    // 2. Send to Gemini AI to generate real subtitles
     try {
-      // Gemini requires us to temporarily upload the file to their server first
       const uploadResult = await fileManager.uploadFile(audioPath, {
         mimeType: "audio/mp3",
         displayName: audioFileName,
       });
 
-      console.log(`[Clip ${i+1}] Asking Gemini for SRT captions...`);
+      console.log(`[Clip ${i+1}] Asking Gemini for strict SRT captions...`);
       const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       
-      // Explicitly instruct Gemini to only output raw SRT formatting
-      const prompt = "Transcribe this audio exactly. Output ONLY a valid SRT format subtitle file. Do not include any markdown blocks like ```srt or conversational text. Start directly with '1'.";
+      // STRICTER PROMPT: Forcing Gemini to behave exactly like a subtitle generator
+      const prompt = `Listen to this short audio clip. Generate a perfectly formatted SRT subtitle file for it. 
+      CRITICAL RULES:
+      1. Output ONLY the raw SRT format. Do not say "Here are your subtitles".
+      2. Start directly with the number '1'.
+      3. You MUST use the exact time format: 00:00:00,000 --> 00:00:04,000.
+      4. Break the text into short, punchy lines.`;
       
       const result = await model.generateContent([
         {
@@ -85,37 +92,33 @@ const worker = new Worker("video-jobs", async (job) => {
       ]);
       
       let transcription = result.response.text();
-      
-      // Clean up the file from Google's servers to save your free storage quota
       await fileManager.deleteFile(uploadResult.file.name);
       
       if (transcription && transcription.trim().length > 0) {
-        // Strip out markdown backticks just in case Gemini tries to format it as code
         transcription = transcription.replace(/```srt\n?/gi, "").replace(/```\n?/g, "").trim();
+        
+        // LOGGING: This prints exactly what Gemini generated to your Render dashboard
+        console.log(`\n--- GEMINI RAW OUTPUT (Clip ${i+1}) ---\n${transcription}\n-----------------------------------\n`);
         
         fs.writeFileSync(srtPath, transcription);
         hasSubtitles = true;
-      } else {
-         console.log(`[Clip ${i+1}] Audio found, but no speech detected by Gemini.`);
       }
     } catch (err) {
-      console.error("Gemini API Error (did you set your GEMINI_API_KEY?):", err.message);
+      console.error("Gemini API Error:", err.message);
     }
 
     console.log(`[Clip ${i+1}] Rendering final video...`);
 
-    // 3. Render the video: Force true vertical aspect ratio AND burn subtitles
     await new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath)
         .seekInput(startTime)     
-        .setDuration(8)   
+        .setDuration(duration)   
         .outputOptions([
           "-preset ultrafast", 
           "-threads 2",        
           "-crf 28"            
         ]);
 
-      // THE ASPECT RATIO FIX: 
       let filterChain = "";
       if (ratio === "9:16") {
         filterChain = "scale=-1:720,crop=406:720";
@@ -125,9 +128,9 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // Add the real Gemini subtitles to the filter chain if they exist
+      // CAPTION FIX: Increased font size to 24, added a strong black outline so it pops on any background
       if (hasSubtitles) {
-        filterChain += `,subtitles=${srtPath}:force_style='FontSize=22,PrimaryColour=&H00FFFFFF,Alignment=2,MarginV=30'`;
+        filterChain += `,subtitles=${srtPath}:force_style='FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,Alignment=2,MarginV=40'`;
       }
 
       command
@@ -141,22 +144,24 @@ const worker = new Worker("video-jobs", async (job) => {
         .run();
     });
 
+    // Format the duration string nicely for the UI (e.g. "0:14")
+    const formattedDuration = `0:${duration.toString().padStart(2, "0")}`;
+
     generatedClips.push({
       id: clipBaseName,
       score: `${95 - (i * 4)}% match`,
-      duration: "0:08",
+      duration: formattedDuration,
       url: `/outputs/${outputFileName}`,
       fileSlug: outputFileName,
       ratio: ratio 
     });
     
-    // Cleanup the temp audio/srt files from your server disk
     if (fs.existsSync(audioPath)) fs.unlinkSync(audioPath);
     if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
   }
 
   await job.updateProgress(100);
-  console.log(`[Worker] Job ${job.id} finished 3 clips!`);
+  console.log(`[Worker] Job ${job.id} finished 3 dynamic clips!`);
   
   return { clips: generatedClips };
 }, { connection: redisConnection });
