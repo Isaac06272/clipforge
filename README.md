@@ -2,10 +2,6 @@
 
 **An AI-powered video editing agent that transforms long-form content and YouTube links into short, viral, caption-ready clips.**
 
-[![Tech Stack](https://img.shields.io/badge/Tech_Stack-React_%7C_Node.js_%7C_FFmpeg_%7C_Gemini_AI-blue?style=for-the-badge)](#tech-stack)
-
----
-
 ## 📖 App Description
 Clipforge is an intelligent, automated video processing pipeline designed for content creators. Instead of manually scrubbing through timelines to find the best moments, users simply upload a video (or paste a YouTube link), choose their desired aspect ratio, and let the AI take over. 
 
