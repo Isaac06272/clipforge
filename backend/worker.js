@@ -183,7 +183,6 @@ const worker = new Worker("video-jobs", async (job) => {
        - "highlight": ONE major punchline word from that line (ALL CAPS). If no word needs highlighting, leave it as an empty string "".
     `;
 
-    // --- FIX: Implement a retry loop for 503 Overloaded errors ---
     let result;
     let retries = 3;
     while (retries > 0) {
@@ -192,13 +191,12 @@ const worker = new Worker("video-jobs", async (job) => {
           { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
           `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
         ]);
-        break; // Success, break out of the loop
+        break; 
       } catch (err) {
         retries--;
         console.warn(`[Worker] Gemini API hiccup. Retries left: ${retries}. Message: ${err.message}`);
-        if (retries === 0) throw err; // Out of retries, fail the job
+        if (retries === 0) throw err; 
         
-        // Wait 5 seconds before trying again
         console.log(`[Worker] Waiting 5 seconds before retrying Gemini...`);
         await new Promise(r => setTimeout(r, 5000));
       }
@@ -242,7 +240,8 @@ const worker = new Worker("video-jobs", async (job) => {
       let command = ffmpeg(inputPath)
         .seekInput(aiClip.startTime) 
         .setDuration(aiClip.duration)   
-        .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28", "-accurate_seek", "-async 1"]);
+        // --- FIX: Removed the conflicting output options here! ---
+        .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28"]);
 
       let filterChain = ratio === "9:16" ? "scale=-1:720,crop=406:720" : ratio === "1:1" ? "scale=-1:720,crop=720:720" : "scale=-2:720";
       command
