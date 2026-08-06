@@ -1,21 +1,21 @@
 import { Router } from "express";
 import multer from "multer";
-import { createJob, getJobStatus, getCandidatesForJob } from "../jobStore.js";
+import { createJob, getJobStatus, getCandidatesForJob, videoQueue } from "../jobStore.js";
 
 const router = Router();
 const upload = multer({ dest: "uploads/" });
 
 router.post("/", upload.single("video"), async (req, res) => {
-  const { ratio, mode, prompt, youtubeUrl } = req.body || {};
-  const fileName = req.file ? req.file.originalname : (youtubeUrl || "Unknown File");
-  const filePath = req.file ? req.file.path : null;
-
-  if (!req.file && !youtubeUrl) {
-    return res.status(400).json({ error: "No video file or YouTube URL provided" });
+  const { ratio, mode, prompt } = req.body || {};
+  
+  if (!req.file) {
+    return res.status(400).json({ error: "No video file provided" });
   }
 
-  // Pass filePath into the job manager
-  const jobId = await createJob({ fileName, filePath, ratio, mode, prompt, youtubeUrl });
+  const fileName = req.file.originalname;
+  const filePath = req.file.path;
+
+  const jobId = await createJob({ fileName, filePath, ratio, mode, prompt });
   res.json({ jobId });
 });
 
@@ -28,6 +28,39 @@ router.get("/:id/status", async (req, res) => {
 router.get("/:id/candidates", async (req, res) => {
   const candidates = await getCandidatesForJob(req.params.id);
   res.json({ candidates });
+});
+
+router.post("/render-final", async (req, res) => {
+  console.log("Received final render request from Editor!");
+  
+  try {
+    const job = await videoQueue.add("video-jobs", req.body);
+    
+    let jobStatus;
+    let result;
+    
+    while (true) {
+      const currentJob = await videoQueue.getJob(job.id);
+      if (!currentJob) throw new Error("Job lost in queue");
+      
+      jobStatus = await currentJob.getState();
+      
+      if (jobStatus === 'completed') {
+        result = currentJob.returnvalue;
+        break;
+      }
+      if (jobStatus === 'failed') {
+        throw new Error(currentJob.failedReason);
+      }
+      await new Promise(r => setTimeout(r, 1000));
+    }
+
+    res.json(result);
+
+  } catch (error) {
+    console.error("Final render routing error:", error);
+    res.status(500).json({ error: "Failed to process the final video render." });
+  }
 });
 
 export default router;

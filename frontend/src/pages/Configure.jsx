@@ -7,7 +7,6 @@ export default function Configure() {
   const navigate = useNavigate();
   const { 
     file, setFile, 
-    youtubeUrl, setYoutubeUrl, 
     ratio, setRatio, 
     mode, setMode, 
     prompt, setPrompt, 
@@ -17,20 +16,10 @@ export default function Configure() {
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState(null);
 
-  // Selecting a file clears YouTube URL
   function handleFilePick(e) {
     const picked = e.target.files?.[0];
     if (picked) {
       setFile(picked);
-      setYoutubeUrl(""); 
-    }
-  }
-
-  // Typing a URL clears selected file
-  function handleUrlChange(e) {
-    setYoutubeUrl(e.target.value);
-    if (e.target.value) {
-      setFile(null); 
     }
   }
 
@@ -40,13 +29,9 @@ export default function Configure() {
     setFile(null);
   }
 
-  function clearUrl() {
-    setYoutubeUrl("");
-  }
-
   async function handleFindClips() {
-    if (!file && !youtubeUrl?.trim()) {
-      setError("Choose a video or enter a YouTube link.");
+    if (!file) {
+      setError("Please choose a video file to upload.");
       return;
     }
     
@@ -62,14 +47,13 @@ export default function Configure() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-8 py-14">
+    <div className="max-w-2xl mx-auto px-8 py-14 text-text-primary">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-2">step 01</p>
       <h1 className="font-display font-bold text-2xl mb-1.5">Configure your edit</h1>
-      <p className="text-sm text-text-secondary mb-8">We'll generate a few clip options — pick the ones you want.</p>
+      <p className="text-sm text-text-secondary mb-8">Upload your video and we'll generate a few clip options.</p>
 
       {/* Media Input Section */}
       <div className="mb-7">
-        {/* File Dropzone */}
         <div className="relative">
           <label className={`block border border-dashed rounded-xl bg-surface p-8 text-center cursor-pointer transition-colors ${file ? 'border-accent-2 bg-accent-2/10' : 'border-border-strong hover:border-accent-2'}`}>
             <input type="file" accept="video/*" className="hidden" onChange={handleFilePick} />
@@ -80,41 +64,12 @@ export default function Configure() {
             </p>
           </label>
           
-          {/* File Clear Button */}
           {file && (
             <button
               type="button"
               onClick={clearFile}
               className="absolute top-3 right-3 w-7 h-7 rounded-full bg-surface-2 border border-border-strong text-text-secondary hover:text-white hover:bg-red-500/20 hover:border-red-500 transition-colors flex items-center justify-center text-xs"
               title="Remove file"
-            >
-              ✕
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4 my-5">
-          <div className="h-px bg-border-strong flex-1"></div>
-          <span className="text-xs font-mono text-text-muted uppercase tracking-wide">or</span>
-          <div className="h-px bg-border-strong flex-1"></div>
-        </div>
-
-        {/* YouTube Input */}
-        <div className="relative">
-          <input
-            type="url"
-            value={youtubeUrl}
-            onChange={handleUrlChange}
-            placeholder="Paste a YouTube link..."
-            className={`w-full bg-surface border rounded-lg p-3.5 pr-10 text-sm placeholder:text-text-muted focus:outline-none transition-colors ${youtubeUrl ? 'border-accent-2 bg-accent-2/10' : 'border-border-strong focus:border-accent-2'}`}
-          />
-          {/* YouTube Clear Button */}
-          {youtubeUrl && (
-            <button
-              type="button"
-              onClick={clearUrl}
-              className="absolute right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full text-text-secondary hover:text-white flex items-center justify-center text-xs"
-              title="Clear URL"
             >
               ✕
             </button>
