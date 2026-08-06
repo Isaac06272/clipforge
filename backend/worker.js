@@ -29,16 +29,15 @@ const worker = new Worker("video-jobs", async (job) => {
   
   let inputPath = filePath;
 
-  // --- FIX 1: THE NEW YOUTUBE DOWNLOADER ---
+  // 1. YOUTUBE DOWNLOADER
   if (youtubeUrl) {
-    console.log(`[Worker] Downloading YouTube video using youtube-dl-exec...`);
+    console.log(`[Worker] Downloading YouTube video...`);
     inputPath = path.join(__dirname, "uploads", `${job.id}_youtube.mp4`);
     try {
       await youtubedl(youtubeUrl, {
         output: inputPath,
         format: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", 
       });
-      console.log(`[Worker] YouTube download successful!`);
     } catch (err) {
       console.error(`[Worker] YouTube download failed:`, err);
       throw new Error("Failed to download YouTube video. The link might be private or restricted.");
@@ -72,35 +71,33 @@ const worker = new Worker("video-jobs", async (job) => {
 
   let clipsData = [];
   try {
-    console.log(`[Worker] Asking Gemini to find the best cuts and generate MrBeast-style captions...`);
+    console.log(`[Worker] Asking Gemini to find the best cuts...`);
     
     const aiModel = genAI.getGenerativeModel({ 
       model: "gemini-2.5-flash",
       generationConfig: { responseMimeType: "application/json" }
     });
     
-    // --- FIX 2: THE "VIRAL EDITOR" AI PROMPT ---
-    const basePrompt = `You are a highly skilled social media video editor (like the ones who edit for MrBeast). Listen to this entire audio track. Find the 3 most engaging, high-energy, or funny segments (10-20 seconds each) to turn into viral TikToks/Shorts.`;
+    const basePrompt = `You are a professional video editor. Listen to this entire audio track and find the 3 most engaging segments (10-20 seconds each).`;
     
     const modePrompt = mode === "prompt" && prompt
       ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.`
-      : `CRITICAL INSTRUCTION: Focus on rapid back-and-forth dialogue, punchlines, or sudden shifts in emotion.`;
+      : `CRITICAL INSTRUCTION: Focus on rapid dialogue, punchlines, or key highlights.`;
 
+    // UPDATED: Selective keyword highlighting rule
     const schemaPrompt = `
     Analyze the audio and return a JSON array containing exactly 3 clip objects.
     Each object must have exactly these keys:
-    - "startTime": the start time of the clip in the original audio (in seconds, as a number).
+    - "startTime": the start time of the clip (in seconds, as a number).
     - "duration": the length of the clip (in seconds, as a number, between 10 and 20).
     - "score": a string representing how good the clip is (e.g. "98% match").
-    - "srt": The complete, valid SRT subtitle string for this specific clip. 
+    - "srt": The complete, valid SRT subtitle string for this clip. 
     
-    SRT FORMATTING RULES (CRITICAL FOR VIRAL STYLE):
-    1. The SRT timestamps MUST reset to 00:00:00,000 for the beginning of the clip!
-    2. Pace the text extremely fast. MAXIMUM 1 to 3 words per line.
-    3. ALL TEXT MUST BE WRITTEN IN ALL CAPS (UPPERCASE).
-    4. HIGHLIGHT KEYWORDS: To emulate the viral MrBeast style, you MUST highlight one important punchline word per line using HTML font tags. Alternate between yellow and bright green for the highlights.
-       Example 1: THIS IS <font color="yellow">CRAZY</font>
-       Example 2: <font color="#00FF00">FOUR HUNDRED</font> DOLLARS
+    SRT FORMATTING RULES:
+    1. Timestamps MUST reset to 00:00:00,000 at clip start!
+    2. Maximum 2 to 4 words per line for clean pacing.
+    3. ALL TEXT MUST BE WRITTEN IN ALL CAPS.
+    4. HIGHLIGHT KEYWORDS SPARINGLY: Do NOT highlight words on every line! Only pick 1 or 2 truly major impact/punchline words in the entire clip to highlight using HTML font tags (e.g. <font color="yellow">PUNCHLINE</font> or <font color="#00FF00">IMPORTANT</font>). Leave all other standard lines in plain text without any tags.
     `;
 
     const finalInstruction = `${basePrompt}\n${modePrompt}\n${schemaPrompt}`;
@@ -111,10 +108,9 @@ const worker = new Worker("video-jobs", async (job) => {
     ]);
     
     clipsData = JSON.parse(result.response.text());
-    console.log(`[Worker] Gemini successfully picked ${clipsData.length} clips!`);
     
   } catch (err) {
-    console.error("Gemini API Error or JSON Parse Error:", err.message);
+    console.error("Gemini API Error:", err.message);
     throw new Error("Failed to generate smart clips from the AI.");
   } finally {
     await fileManager.deleteFile(uploadResult.file.name);
@@ -136,8 +132,6 @@ const worker = new Worker("video-jobs", async (job) => {
     
     fs.writeFileSync(srtPath, aiClip.srt);
 
-    console.log(`[Clip ${i+1}] Rendering AI choice: Start ${aiClip.startTime}s, Duration ${aiClip.duration}s`);
-
     await new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath)
         .seekInput(aiClip.startTime) 
@@ -157,8 +151,8 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // --- FIX 3: MR. BEAST STYLE CAPTION SETTINGS ---
-      filterChain += `,subtitles=${srtPath}:force_style='FontName=Impact,FontSize=28,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=4,Shadow=0,Alignment=2,MarginV=90'`;
+      // UPDATED CAPTION STYLE: Smaller font (18), clean outline (2), lower-center position (MarginV=35)
+      filterChain += `,subtitles=${srtPath}:force_style='FontName=Impact,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=35'`;
 
       command
         .videoFilters(filterChain)
@@ -188,9 +182,5 @@ const worker = new Worker("video-jobs", async (job) => {
   }
 
   await job.updateProgress(100);
-  console.log(`[Worker] Job ${job.id} completely finished!`);
-  
   return { clips: generatedClips };
 }, { connection: redisConnection });
-
-console.log("FFmpeg Master AI Editor Worker is online and waiting for jobs...");
