@@ -123,7 +123,6 @@ const worker = new Worker("video-jobs", async (job) => {
   // ==========================================
   const { fileName, filePath, ratio, mode, prompt } = data;
   
-  // Strict absolute path checking
   let inputPath = filePath; 
   if (!inputPath || !fs.existsSync(inputPath)) {
     inputPath = path.join(uploadsDir, fileName);
@@ -184,10 +183,26 @@ const worker = new Worker("video-jobs", async (job) => {
        - "highlight": ONE major punchline word from that line (ALL CAPS). If no word needs highlighting, leave it as an empty string "".
     `;
 
-    const result = await aiModel.generateContent([
-      { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
-      `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
-    ]);
+    // --- FIX: Implement a retry loop for 503 Overloaded errors ---
+    let result;
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        result = await aiModel.generateContent([
+          { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
+          `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
+        ]);
+        break; // Success, break out of the loop
+      } catch (err) {
+        retries--;
+        console.warn(`[Worker] Gemini API hiccup. Retries left: ${retries}. Message: ${err.message}`);
+        if (retries === 0) throw err; // Out of retries, fail the job
+        
+        // Wait 5 seconds before trying again
+        console.log(`[Worker] Waiting 5 seconds before retrying Gemini...`);
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
     
     let rawText = result.response.text();
     rawText = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
@@ -199,7 +214,7 @@ const worker = new Worker("video-jobs", async (job) => {
 
   } catch (err) {
     console.error("[Worker] Gemini API or JSON Parse Error:", err.message);
-    throw new Error("Failed to process AI transcripts.");
+    throw new Error("Failed to process AI transcripts after multiple attempts.");
   } finally {
     await fileManager.deleteFile(uploadResult.file.name);
     if (fs.existsSync(fullAudioPath)) fs.unlinkSync(fullAudioPath);
