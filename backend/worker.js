@@ -96,7 +96,10 @@ const worker = new Worker("video-jobs", async (job) => {
         .videoFilters(filterChain)
         .output(outputPath)
         .on("end", resolve)
-        .on("error", reject)
+        .on("error", (err) => {
+          console.error("[Worker] FFmpeg Final Render Error:", err);
+          reject(err);
+        })
         .run();
     });
 
@@ -120,18 +123,36 @@ const worker = new Worker("video-jobs", async (job) => {
   // ==========================================
   const { fileName, filePath, ratio, mode, prompt } = data;
   
-  // --- FIX 2: Ensure path is absolute so FFmpeg never gets lost ---
-  let inputPath = filePath ? path.resolve(filePath) : path.join(__dirname, "uploads", fileName);
+  // Strict absolute path checking
+  let inputPath = filePath; 
+  if (!inputPath || !fs.existsSync(inputPath)) {
+    inputPath = path.join(uploadsDir, fileName);
+  }
+
+  if (!fs.existsSync(inputPath)) {
+    console.error(`[Worker] CRITICAL ERROR: File not found at ${inputPath}`);
+    throw new Error("Uploaded video file could not be located on the server.");
+  }
 
   await job.updateProgress(20);
   const fullAudioFileName = `${job.id}_full_audio.mp3`;
   const fullAudioPath = path.join(outputDir, fullAudioFileName);
   
+  console.log(`[Worker] Extracting audio from ${inputPath}`);
   await new Promise((resolve, reject) => {
-    ffmpeg(inputPath).noVideo().output(fullAudioPath).on("end", resolve).on("error", reject).run();
+    ffmpeg(inputPath)
+      .noVideo()
+      .output(fullAudioPath)
+      .on("end", resolve)
+      .on("error", (err) => {
+        console.error("[Worker] FFmpeg Audio Extraction Error:", err);
+        reject(err);
+      })
+      .run();
   });
 
   await job.updateProgress(40);
+  console.log(`[Worker] Uploading audio to Gemini...`);
   const uploadResult = await fileManager.uploadFile(fullAudioPath, {
     mimeType: "audio/mp3",
     displayName: fullAudioFileName,
@@ -168,16 +189,17 @@ const worker = new Worker("video-jobs", async (job) => {
       `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
     ]);
     
-    // --- FIX 3: Clean up Markdown from Gemini output before parsing ---
     let rawText = result.response.text();
-    rawText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+    rawText = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
     clipsData = JSON.parse(rawText);
     
-    // Safety check just in case Gemini wrapped it in an object instead of an array
     if (clipsData.clips) {
         clipsData = clipsData.clips;
     }
 
+  } catch (err) {
+    console.error("[Worker] Gemini API or JSON Parse Error:", err.message);
+    throw new Error("Failed to process AI transcripts.");
   } finally {
     await fileManager.deleteFile(uploadResult.file.name);
     if (fs.existsSync(fullAudioPath)) fs.unlinkSync(fullAudioPath);
@@ -200,6 +222,7 @@ const worker = new Worker("video-jobs", async (job) => {
       highlight: line.highlight || ""
     }));
 
+    console.log(`[Worker] Rendering clean cut ${i + 1}...`);
     await new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath)
         .seekInput(aiClip.startTime) 
@@ -207,7 +230,15 @@ const worker = new Worker("video-jobs", async (job) => {
         .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28", "-accurate_seek", "-async 1"]);
 
       let filterChain = ratio === "9:16" ? "scale=-1:720,crop=406:720" : ratio === "1:1" ? "scale=-1:720,crop=720:720" : "scale=-2:720";
-      command.videoFilters(filterChain).output(outputPath).on("end", resolve).on("error", reject).run();
+      command
+        .videoFilters(filterChain)
+        .output(outputPath)
+        .on("end", resolve)
+        .on("error", (err) => {
+           console.error(`[Worker] FFmpeg Cut Error for clip ${i + 1}:`, err);
+           reject(err);
+        })
+        .run();
     });
 
     generatedClips.push({

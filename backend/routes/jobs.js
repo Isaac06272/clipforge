@@ -1,20 +1,29 @@
 import { Router } from "express";
 import multer from "multer";
 import path from "path";
+import { fileURLToPath } from "url";
 import { createJob, getJobStatus, getCandidatesForJob, videoQueue } from "../jobStore.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const router = Router();
 
-// --- FIX 1: Tell Multer to keep the original file extension (.mp4, .mov, etc) ---
+// --- STRICT ABSOLUTE PATHING FOR FILE UPLOADS ---
+const uploadsDir = path.join(__dirname, "..", "uploads");
+
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/");
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
+    // Safely enforce an extension so FFmpeg never crashes
+    const ext = path.extname(file.originalname) || ".mp4";
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
+    cb(null, uniqueSuffix + ext);
   }
 });
+
 const upload = multer({ storage });
 
 router.post("/", upload.single("video"), async (req, res) => {
@@ -25,7 +34,7 @@ router.post("/", upload.single("video"), async (req, res) => {
   }
 
   const fileName = req.file.originalname;
-  const filePath = req.file.path; 
+  const filePath = req.file.path; // This is now a guaranteed absolute path
 
   const jobId = await createJob({ fileName, filePath, ratio, mode, prompt });
   res.json({ jobId });
