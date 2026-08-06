@@ -119,7 +119,9 @@ const worker = new Worker("video-jobs", async (job) => {
   // PHASE 1: AI CLIP EXTRACTION (INITIAL UPLOAD)
   // ==========================================
   const { fileName, filePath, ratio, mode, prompt } = data;
-  let inputPath = filePath || path.join(__dirname, "uploads", fileName);
+  
+  // --- FIX 2: Ensure path is absolute so FFmpeg never gets lost ---
+  let inputPath = filePath ? path.resolve(filePath) : path.join(__dirname, "uploads", fileName);
 
   await job.updateProgress(20);
   const fullAudioFileName = `${job.id}_full_audio.mp3`;
@@ -165,7 +167,17 @@ const worker = new Worker("video-jobs", async (job) => {
       { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
       `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
     ]);
-    clipsData = JSON.parse(result.response.text());
+    
+    // --- FIX 3: Clean up Markdown from Gemini output before parsing ---
+    let rawText = result.response.text();
+    rawText = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
+    clipsData = JSON.parse(rawText);
+    
+    // Safety check just in case Gemini wrapped it in an object instead of an array
+    if (clipsData.clips) {
+        clipsData = clipsData.clips;
+    }
+
   } finally {
     await fileManager.deleteFile(uploadResult.file.name);
     if (fs.existsSync(fullAudioPath)) fs.unlinkSync(fullAudioPath);

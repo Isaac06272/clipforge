@@ -1,9 +1,21 @@
 import { Router } from "express";
 import multer from "multer";
+import path from "path";
 import { createJob, getJobStatus, getCandidatesForJob, videoQueue } from "../jobStore.js";
 
 const router = Router();
-const upload = multer({ dest: "uploads/" });
+
+// --- FIX 1: Tell Multer to keep the original file extension (.mp4, .mov, etc) ---
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, "uploads/");
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + path.extname(file.originalname));
+  }
+});
+const upload = multer({ storage });
 
 router.post("/", upload.single("video"), async (req, res) => {
   const { ratio, mode, prompt } = req.body || {};
@@ -13,7 +25,7 @@ router.post("/", upload.single("video"), async (req, res) => {
   }
 
   const fileName = req.file.originalname;
-  const filePath = req.file.path;
+  const filePath = req.file.path; 
 
   const jobId = await createJob({ fileName, filePath, ratio, mode, prompt });
   res.json({ jobId });
