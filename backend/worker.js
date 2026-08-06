@@ -18,9 +18,15 @@ const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:63
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
 
+// --- FIX 1: ENSURE DIRECTORIES EXIST ON RENDER ---
 const outputDir = path.join(__dirname, "outputs");
 if (!fs.existsSync(outputDir)) {
   fs.mkdirSync(outputDir, { recursive: true });
+}
+
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
 const worker = new Worker("video-jobs", async (job) => {
@@ -29,18 +35,18 @@ const worker = new Worker("video-jobs", async (job) => {
   
   let inputPath = filePath;
 
-  // 1. YOUTUBE DOWNLOADER
   if (youtubeUrl) {
     console.log(`[Worker] Downloading YouTube video...`);
     inputPath = path.join(__dirname, "uploads", `${job.id}_youtube.mp4`);
     try {
       await youtubedl(youtubeUrl, {
         output: inputPath,
-        format: "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4", 
+        format: "best", // Simplified to grab the best pre-merged format to avoid muxing crashes
+        noWarnings: true,
       });
     } catch (err) {
       console.error(`[Worker] YouTube download failed:`, err);
-      throw new Error("Failed to download YouTube video. The link might be private or restricted.");
+      throw new Error("Failed to download YouTube video. The link might be private, restricted, or YouTube blocked the server IP.");
     }
   } else if (!inputPath) {
     inputPath = path.join(__dirname, "uploads", fileName);
@@ -84,7 +90,7 @@ const worker = new Worker("video-jobs", async (job) => {
       ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.`
       : `CRITICAL INSTRUCTION: Focus on rapid dialogue, punchlines, or key highlights.`;
 
-    // UPDATED: Selective keyword highlighting rule
+    // --- FIX 2: ULTRA STRICT 1-2 WORD PACING ---
     const schemaPrompt = `
     Analyze the audio and return a JSON array containing exactly 3 clip objects.
     Each object must have exactly these keys:
@@ -95,9 +101,9 @@ const worker = new Worker("video-jobs", async (job) => {
     
     SRT FORMATTING RULES:
     1. Timestamps MUST reset to 00:00:00,000 at clip start!
-    2. Maximum 2 to 4 words per line for clean pacing.
+    2. STRICT PACING: Write EXACTLY 1 or 2 words per line. NEVER put 3 or more words on a single line.
     3. ALL TEXT MUST BE WRITTEN IN ALL CAPS.
-    4. HIGHLIGHT KEYWORDS SPARINGLY: Do NOT highlight words on every line! Only pick 1 or 2 truly major impact/punchline words in the entire clip to highlight using HTML font tags (e.g. <font color="yellow">PUNCHLINE</font> or <font color="#00FF00">IMPORTANT</font>). Leave all other standard lines in plain text without any tags.
+    4. HIGHLIGHT KEYWORDS SPARINGLY: Only pick 1 or 2 major punchline words in the entire clip to highlight using HTML tags (e.g. <font color="yellow">WORD</font> or <font color="#00FF00">WORD</font>). Leave standard lines plain white.
     `;
 
     const finalInstruction = `${basePrompt}\n${modePrompt}\n${schemaPrompt}`;
@@ -151,7 +157,6 @@ const worker = new Worker("video-jobs", async (job) => {
         filterChain = "scale=-2:720";
       }
 
-      // UPDATED CAPTION STYLE: Smaller font (18), clean outline (2), lower-center position (MarginV=35)
       filterChain += `,subtitles=${srtPath}:force_style='FontName=Impact,FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=0,Alignment=2,MarginV=35'`;
 
       command
@@ -184,3 +189,5 @@ const worker = new Worker("video-jobs", async (job) => {
   await job.updateProgress(100);
   return { clips: generatedClips };
 }, { connection: redisConnection });
+
+console.log("FFmpeg Master AI Editor Worker is online and waiting for jobs...");
