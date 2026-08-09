@@ -291,8 +291,6 @@ export async function renderFinal(job, config) {
     {
       filter: "subtitles",
       options: `${srtPath.replace(/\\/g, "/")}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=${borderStyle},BackColour=${backColour},Outline=${outlineSize},Shadow=${shadow},Alignment=${alignment},MarginV=${marginV},MarginL=${marginL},MarginR=${marginR}'`,
-      inputs: "0:v",
-      outputs: "cap",
     },
   ];
 

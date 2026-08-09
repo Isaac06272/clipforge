@@ -86,7 +86,7 @@ export function SessionProvider({ children }) {
     jobId,
     candidates,
     selectedIds, toggleSelected,
-    results,
+    results, setResults,
     history,
     startProcessing,
     fetchCandidatesForJob,
