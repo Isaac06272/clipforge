@@ -4,7 +4,8 @@ const STEPS = [
   { path: "/configure", label: "01 Upload" },
   { path: "/processing", label: "02 Processing" },
   { path: "/select", label: "03 Select" },
-  { path: "/export", label: "04 Export" },
+  { path: "/editor", label: "04 Edit" },
+  { path: "/export", label: "05 Export" },
 ];
 
 export default function Header() {

@@ -6,6 +6,9 @@ const SessionContext = createContext(null);
 export function SessionProvider({ children }) {
   const [file, setFile] = useState(null); // Now stores the raw File object
   const [ratio, setRatio] = useState("9:16");
+  const [clipCount, setClipCount] = useState(3); // how many clips Gemini should find
+  const [clipLength, setClipLength] = useState("auto"); // "auto" | "30" | "45" | "60" (seconds)
+  const [captionLang, setCaptionLang] = useState("English"); // transcript language hint for Gemini
 
   const [jobId, setJobId] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -28,11 +31,14 @@ export function SessionProvider({ children }) {
     if (file) payload.append("video", file);
 
     payload.append("ratio", ratio);
+    payload.append("clipCount", String(clipCount));
+    payload.append("clipLength", clipLength);
+    payload.append("captionLang", captionLang);
 
     const { jobId: newJobId } = await api.startJob(payload);
     setJobId(newJobId);
     return newJobId;
-  }, [file, ratio]);
+  }, [file, ratio, clipCount, clipLength, captionLang]);
 
   const fetchCandidatesForJob = useCallback(async (id) => {
     const { candidates: fetchedCandidates } = await api.getCandidates(id);
@@ -74,6 +80,9 @@ export function SessionProvider({ children }) {
   const value = {
     file, setFile,
     ratio, setRatio,
+    clipCount, setClipCount,
+    clipLength, setClipLength,
+    captionLang, setCaptionLang,
     jobId,
     candidates,
     selectedIds, toggleSelected,

@@ -39,7 +39,7 @@ function formatSrtTime(timeStr) {
 // straight onto the job record in jobStore.
 // ==========================================
 export async function processJob(job) {
-  const { fileName, filePath, ratio, mode, prompt } = job.data;
+  const { fileName, filePath, ratio, mode, prompt, clipCount, clipLength, captionLang } = job.data;
   job.status = "processing";
 
   let inputPath = filePath;
@@ -83,16 +83,24 @@ export async function processJob(job) {
       generationConfig: { responseMimeType: "application/json" },
     });
 
-    const basePrompt = `You are a professional video editor. Listen to this entire audio track and find the 3 most engaging segments (10-20 seconds each).`;
+    // Clip count + duration band from the Configure page (with safe defaults)
+    const clipNum = Math.max(1, Math.min(6, parseInt(clipCount, 10) || 3));
+    const band = { auto: [10, 20], "30": [25, 35], "45": [40, 50], "60": [55, 70] }[clipLength] || [10, 20];
+
+    const basePrompt = `You are a professional video editor. Listen to this entire audio track and find the ${clipNum} most engaging segments (${band[0]}-${band[1]} seconds each).`;
     const modePrompt =
       mode === "prompt" && prompt
         ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.`
         : `CRITICAL INSTRUCTION: Focus on rapid dialogue, punchlines, or key highlights.`;
+    const langPrompt =
+      captionLang && captionLang !== "English"
+        ? `CRITICAL INSTRUCTION: The audio is spoken in ${captionLang}. Transcribe the speech in ${captionLang} exactly as spoken (keep words in ALL CAPS).`
+        : "";
     const schemaPrompt = `
-    Analyze the audio and return a JSON array containing exactly 3 clip objects.
+    Analyze the audio and return a JSON array containing exactly ${clipNum} clip objects.
     Each object must have exactly these keys:
     - "startTime": the start time of the clip in the original video (in seconds, as a number).
-    - "duration": the length of the clip (in seconds, as a number, between 10 and 20).
+    - "duration": the length of the clip (in seconds, as a number, between ${band[0]} and ${band[1]}).
     - "score": a string representing how good the clip is (e.g. "98% match").
     - "transcript": An array of line objects representing the spoken text for this clip.
 
@@ -111,7 +119,7 @@ export async function processJob(job) {
       try {
         result = await aiModel.generateContent([
           { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
-          `${basePrompt}\n${modePrompt}\n${schemaPrompt}`,
+          `${basePrompt}\n${modePrompt}\n${langPrompt}\n${schemaPrompt}`,
         ]);
         break;
       } catch (err) {
@@ -199,8 +207,18 @@ export async function processJob(job) {
 // PHASE 2: THE FINAL RENDER (FROM FRONTEND)
 // config = the request body sent by the Editor:
 //   sourceFileSlug, transcript, theme, highlightColor,
-//   fontFamily, fontSize, position, ratio, watermark, ...
+//   fontFamily, fontSize, position (9-grid), ratio,
+//   fit, corners, titleText, titleColor, captionBg, ...
 // ==========================================
+
+// ASS Alignment codes for the 9 caption positions (row = t/m/b, col = l/c/r)
+const ASS_ALIGN = { tl: 7, tc: 8, tr: 9, ml: 4, mc: 5, mr: 6, bl: 1, bc: 2, br: 3 };
+
+// Rounded-rect alpha test for geq: 1 inside the shape (white), 0 in the corners.
+// R = 24px corner radius, W/H are geq runtime variables (input dimensions).
+const ROUND_RADIUS = 24;
+const ROUNDED_RECT_EXPR = `if(lte(abs(X-W/2),W/2-${ROUND_RADIUS})*lte(abs(Y-H/2),H/2-${ROUND_RADIUS})+lte(hypot(max(abs(X-W/2)-(W/2-${ROUND_RADIUS}),0),max(abs(Y-H/2)-(H/2-${ROUND_RADIUS}),0)),${ROUND_RADIUS}),255,0)`;
+
 export async function renderFinal(job, config) {
   console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
   const inputPath = path.join(outputDir, config.sourceFileSlug);
@@ -222,12 +240,22 @@ export async function renderFinal(job, config) {
 
   let fontName = config.fontFamily || "Impact";
   let fontSizeNum = config.fontSize === "text-lg" ? 14 : config.fontSize === "text-4xl" ? 28 : 22;
-  let marginV = config.position === "top" ? 320 : config.position === "center" ? 180 : 40;
+
+  // 9-grid position → ASS alignment + margins
+  const pos = config.position || "mc";
+  const row = pos[0] || "m";
+  const col = pos[1] || "c";
+  const alignment = ASS_ALIGN[pos] || 5;
+  const marginV = row === "t" || row === "b" ? 40 : 0;
+  const marginL = col === "l" ? 40 : 0;
+  const marginR = col === "r" ? 40 : 0;
 
   let primaryColor = "&H00FFFFFF";
   let outlineColor = "&H00000000";
   let outlineSize = 2;
   let shadow = 0;
+  let borderStyle = 1; // outline-only (ASS)
+  let backColour = "&H00000000";
 
   if (config.theme === "Neon") {
     primaryColor = "&H00FFFF00";
@@ -243,12 +271,83 @@ export async function renderFinal(job, config) {
     outlineSize = 1;
   }
 
-  await new Promise((resolve, reject) => {
-    let command = ffmpeg(inputPath).outputOptions(["-preset ultrafast", "-threads 2"]);
-    let filterChain = `subtitles=${srtPath}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=1,Outline=${outlineSize},Shadow=${shadow},Alignment=2,MarginV=${marginV}'`;
+  // Caption background: BoxStyle 3 = solid box behind text, using BackColour.
+  // ASS colors are &HAABBGGRR (AA 00 = opaque, FF = transparent).
+  const bg = config.captionBg || "none";
+  if (bg === "solid") {
+    borderStyle = 3;
+    backColour = "&H00000000";
+    outlineSize = 0;
+    shadow = 0;
+  } else if (bg === "semi") {
+    borderStyle = 3;
+    backColour = "&H66000000"; // ~60% opaque black
+    outlineSize = 0;
+    shadow = 0;
+  }
 
-    command
-      .videoFilters(filterChain)
+  const filters = [
+    {
+      filter: "subtitles",
+      options: `${srtPath.replace(/\\/g, "/")}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=${borderStyle},BackColour=${backColour},Outline=${outlineSize},Shadow=${shadow},Alignment=${alignment},MarginV=${marginV},MarginL=${marginL},MarginR=${marginR}'`,
+      inputs: "0:v",
+      outputs: "cap",
+    },
+  ];
+  let cur = "cap";
+
+  // Optional title overlay (drawtext). Sanitize to keep the filter graph happy.
+  const rawTitle = String(config.titleText || "").trim();
+  if (rawTitle) {
+    const safeTitle = rawTitle.replace(/\\/g, "/").replace(/['"%]/g, "");
+    const titleFont = String(config.fontFamily || "Impact").replace(/['":,]/g, "");
+    const titleColorArg = String(config.titleColor || "#FFFFFF").replace("#", "0x");
+    filters.push({
+      filter: "drawtext",
+      options: `text='${safeTitle}':font='${titleFont}':fontcolor=${titleColorArg}:fontsize=34:x=(w-text_w)/2:y=36`,
+      inputs: cur,
+      outputs: "titled",
+    });
+    cur = "titled";
+  }
+
+  // Square fit: pad the frame into a square canvas (contain, not crop).
+  if (config.fit === "square") {
+    // Target square = max(iw, ih); center the frame. Probing isn't needed
+    // because pad accepts these expressions directly.
+    filters.push({
+      filter: "pad",
+      options: "w='max(iw,ih)':h='max(iw,ih)':x='(max(iw,ih)-iw)/2':y='(max(iw,ih)-ih)/2':color=black",
+      inputs: cur,
+      outputs: "squared",
+    });
+    cur = "squared";
+  }
+
+  // Rounded corners: mask the alpha, composite over solid black.
+  if (config.corners === "round") {
+    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "base" });
+    // Black opaque background of identical size (derived from the same stream).
+    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "bgraw" });
+    filters.push({ filter: "geq", options: "r=0:g=0:b=0:a=255", inputs: "bgraw", outputs: "bg" });
+    // Grayscale mask: white inside the rounded rect, black corners. alphamerge
+    // uses the second input's luminance as alpha.
+    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "maskraw" });
+    filters.push({
+      filter: "geq",
+      options: `r=${ROUNDED_RECT_EXPR}:g=${ROUNDED_RECT_EXPR}:b=${ROUNDED_RECT_EXPR}:a=255`,
+      inputs: "maskraw",
+      outputs: "mask",
+    });
+    filters.push({ filter: "alphamerge", inputs: ["base", "mask"], outputs: "rounded" });
+    filters.push({ filter: "overlay", options: "0:0", inputs: ["bg", "rounded"], outputs: "outv" });
+    cur = "outv";
+  }
+
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .videoFilters(filters)
+      .outputOptions(["-preset ultrafast", "-threads 2"])
       .output(outputPath)
       .on("end", resolve)
       .on("error", (err) => {

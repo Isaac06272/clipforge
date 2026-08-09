@@ -8,6 +8,9 @@ export default function Configure() {
   const {
     file, setFile,
     ratio, setRatio,
+    clipCount, setClipCount,
+    clipLength, setClipLength,
+    captionLang, setCaptionLang,
     startProcessing
   } = useSession();
   
@@ -81,6 +84,81 @@ export default function Configure() {
           Output ratio — editable later
         </p>
         <RatioPicker value={ratio} onChange={setRatio} />
+      </div>
+
+      {/* How many clips to find */}
+      <div className="mb-7">
+        <p className="font-mono text-xs uppercase tracking-wide text-text-secondary mb-2.5">
+          Clips to generate
+        </p>
+        <div className="flex items-center justify-between bg-surface border border-border-strong rounded-lg p-3">
+          <button
+            type="button"
+            onClick={() => setClipCount((n) => Math.max(1, n - 1))}
+            disabled={clipCount <= 1}
+            className="w-9 h-9 rounded-md border border-border-strong text-white text-lg hover:border-accent-2 transition-colors disabled:opacity-30 cursor-pointer"
+          >
+            −
+          </button>
+          <span className="font-mono text-xl text-accent font-bold">{clipCount}</span>
+          <button
+            type="button"
+            onClick={() => setClipCount((n) => Math.min(6, n + 1))}
+            disabled={clipCount >= 6}
+            className="w-9 h-9 rounded-md border border-border-strong text-white text-lg hover:border-accent-2 transition-colors disabled:opacity-30 cursor-pointer"
+          >
+            +
+          </button>
+        </div>
+        <p className="font-mono text-[11px] text-text-muted mt-1.5">How many highlights to find (1–6).</p>
+      </div>
+
+      {/* Target clip length */}
+      <div className="mb-7">
+        <p className="font-mono text-xs uppercase tracking-wide text-text-secondary mb-2.5">
+          Clip length
+        </p>
+        <div className="grid grid-cols-4 gap-2">
+          {[
+            { key: "auto", label: "Auto" },
+            { key: "30", label: "30s" },
+            { key: "45", label: "45s" },
+            { key: "60", label: "60s" },
+          ].map((opt) => (
+            <button
+              key={opt.key}
+              type="button"
+              onClick={() => setClipLength(opt.key)}
+              className={`py-2.5 text-xs border rounded-lg transition-colors cursor-pointer ${
+                clipLength === opt.key
+                  ? "border-accent-2 bg-accent-2/10 text-white font-medium"
+                  : "border-border-strong text-text-secondary hover:border-text-secondary"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="font-mono text-[11px] text-text-muted mt-1.5">Target duration for each generated clip.</p>
+      </div>
+
+      {/* Spoken language for transcription */}
+      <div className="mb-7">
+        <p className="font-mono text-xs uppercase tracking-wide text-text-secondary mb-2.5">
+          Caption language
+        </p>
+        <select
+          value={captionLang}
+          onChange={(e) => setCaptionLang(e.target.value)}
+          className="w-full bg-surface border border-border-strong rounded-lg p-3 text-sm text-white focus:outline-none focus:border-accent-2"
+        >
+          {["English", "Tagalog", "Spanish", "French", "German", "Japanese", "Korean", "Hindi"].map((lang) => (
+            <option key={lang} value={lang}>
+              {lang}
+            </option>
+          ))}
+        </select>
+        <p className="font-mono text-[11px] text-text-muted mt-1.5">Language the video is spoken in — improves transcription accuracy.</p>
       </div>
 
       {error && <p className="text-xs text-red-400 mb-3">{error}</p>}

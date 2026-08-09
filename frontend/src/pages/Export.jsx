@@ -22,7 +22,7 @@ export default function Export() {
 
   return (
     <div className="max-w-4xl mx-auto px-8 py-14">
-      <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-2">step 04</p>
+      <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-2">step 05</p>
       <h1 className="font-display font-bold text-2xl mb-7">Your clips are ready</h1>
 
       <div className="grid sm:grid-cols-2 gap-3.5 mb-7">

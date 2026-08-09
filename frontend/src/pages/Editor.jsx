@@ -3,31 +3,43 @@ import { useNavigate, useLocation } from "react-router-dom";
 import RatioPicker from "../components/RatioPicker";
 import { useSession } from "../lib/SessionContext";
 
+const PRESET_KEY = "clipforge_presets";
+
+// 3x3 caption-position grid: row = t/m/b, col = l/c/r
+const POSITION_ROWS = ["t", "m", "b"];
+const POSITION_COLS = ["l", "c", "r"];
+
 export default function Editor() {
   const navigate = useNavigate();
   const location = useLocation();
-  const videoRef = useRef(null); 
-  const { jobId, setResults } = useSession(); // jobId needed by render-final; setResults passes the final video to Export
-  
+  const videoRef = useRef(null);
+  const { jobId, clipCount, clipLength, captionLang, setResults } = useSession();
+
   const activeClip = location.state?.activeClip;
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
 
   const [activeTab, setActiveTab] = useState("style");
   const [theme, setTheme] = useState("Bold White");
-  const [highlightColor, setHighlightColor] = useState("#EAB308"); 
+  const [highlightColor, setHighlightColor] = useState("#EAB308");
   const [fontFamily, setFontFamily] = useState("Impact");
   const [fontSize, setFontSize] = useState("text-2xl");
-  const [position, setPosition] = useState("center");
+  const [position, setPosition] = useState("mc"); // 9-grid key
+  const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
   const [aspectRatio, setAspectRatio] = useState(activeClip?.ratio || "9:16");
+  const [fit, setFit] = useState("crop"); // crop | square
+  const [corners, setCorners] = useState("square"); // square | round
+  const [titleText, setTitleText] = useState("");
+  const [titleColor, setTitleColor] = useState("#FFFFFF");
   const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [savedPresets, setSavedPresets] = useState([]);
 
   const [transcriptLines, setTranscriptLines] = useState([]);
   const [activeLineIndex, setActiveLineIndex] = useState(0);
 
   useEffect(() => {
     if (!activeClip) {
-      navigate("/select"); 
+      navigate("/select");
       return;
     }
     if (activeClip.transcript && activeClip.transcript.length > 0) {
@@ -37,9 +49,19 @@ export default function Editor() {
     }
   }, [activeClip, navigate]);
 
+  // Load saved style presets from localStorage once
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PRESET_KEY);
+      if (raw) setSavedPresets(JSON.parse(raw));
+    } catch {
+      // corrupted preset data — ignore
+    }
+  }, []);
+
   function parseTime(timeStr) {
     if (!timeStr) return 0;
-    const cleanStr = String(timeStr).replace(",", "."); 
+    const cleanStr = String(timeStr).replace(",", ".");
     if (!cleanStr.includes(":")) return parseFloat(cleanStr) || 0;
     const parts = cleanStr.split(":").map(parseFloat);
     if (parts.length === 2) return parts[0] * 60 + parts[1];
@@ -50,8 +72,8 @@ export default function Editor() {
   function handleTimeUpdate() {
     if (!videoRef.current || transcriptLines.length === 0) return;
     const currentTime = videoRef.current.currentTime;
-    
-    const currentIndex = transcriptLines.findIndex(line => {
+
+    const currentIndex = transcriptLines.findIndex((line) => {
       const start = parseTime(line.startTime);
       const end = parseTime(line.endTime);
       return currentTime >= start && currentTime <= end;
@@ -77,7 +99,44 @@ export default function Editor() {
     setTranscriptLines(updated);
   }
 
-  // --- NEW: Sends the customized settings back to the backend ---
+  // --- Presets (save / load / delete) ---
+  function saveCurrentPreset() {
+    const preset = {
+      name: `Preset ${savedPresets.length + 1}`,
+      theme,
+      highlightColor,
+      fontFamily,
+      fontSize,
+      position,
+      captionBg,
+      corners,
+      titleText,
+      titleColor,
+    };
+    const next = [...savedPresets, preset];
+    setSavedPresets(next);
+    localStorage.setItem(PRESET_KEY, JSON.stringify(next));
+  }
+
+  function loadPreset(p) {
+    setTheme(p.theme);
+    setHighlightColor(p.highlightColor);
+    setFontFamily(p.fontFamily);
+    setFontSize(p.fontSize);
+    setPosition(p.position);
+    setCaptionBg(p.captionBg);
+    setCorners(p.corners);
+    setTitleText(p.titleText || "");
+    setTitleColor(p.titleColor || "#FFFFFF");
+  }
+
+  function deletePreset(index) {
+    const next = savedPresets.filter((_, i) => i !== index);
+    setSavedPresets(next);
+    localStorage.setItem(PRESET_KEY, JSON.stringify(next));
+  }
+
+  // --- Sends the customized settings back to the backend ---
   async function handleExport() {
     setExporting(true);
     try {
@@ -92,23 +151,27 @@ export default function Editor() {
         position,
         ratio: aspectRatio,
         watermark,
-        transcript: transcriptLines
+        transcript: transcriptLines,
+        fit,
+        corners,
+        titleText,
+        titleColor,
+        captionBg,
       };
 
       const response = await fetch(`${API_BASE_URL}/api/jobs/render-final`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) throw new Error("Failed to render final video.");
-      
+
       const finalData = await response.json();
-      
+
       // Save the final rendered video to the context so Export.jsx can show it
-      setResults([finalData.finalClip]); 
+      setResults([finalData.finalClip]);
       navigate("/export");
-      
     } catch (err) {
       console.error(err);
       alert("Something went wrong during the final export.");
@@ -134,19 +197,28 @@ export default function Editor() {
     }
   }
 
+  // 9-grid positioning for the on-screen caption preview
   function getPositionClass() {
-    if (position === "top") return "top-12";
-    if (position === "center") return "top-1/2 -translate-y-1/2";
-    return "bottom-16";
+    const row = position ? position[0] : "m";
+    const map = { t: "top-12", m: "top-1/2 -translate-y-1/2", b: "bottom-16" };
+    return map[row] || "top-1/2 -translate-y-1/2";
   }
 
-  if (!activeClip) return null; 
+  function getAlignClass() {
+    const col = position ? position[1] : "c";
+    if (col === "l") return "items-start text-left";
+    if (col === "r") return "items-end text-right";
+    return "items-center text-center";
+  }
+
+  if (!activeClip) return null;
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row gap-6 p-6 max-w-[1600px] mx-auto text-text-primary">
+      <p className="hidden md:block fixed top-5 right-6 z-50 font-mono text-xs uppercase tracking-widest text-accent-2">step 04</p>
       <div className="w-full md:w-80 flex flex-col gap-4">
-        <button 
-          onClick={() => navigate("/select")} 
+        <button
+          onClick={() => navigate("/select")}
           className="text-xs font-mono uppercase tracking-wider text-text-secondary hover:text-white text-left transition-colors flex items-center gap-1"
         >
           ← Back to clips
@@ -154,7 +226,7 @@ export default function Editor() {
 
         <div className="bg-surface border border-border rounded-xl flex-1 flex flex-col overflow-hidden">
           <div className="flex border-b border-border bg-surface-2/50">
-            <button 
+            <button
               onClick={() => setActiveTab("style")}
               className={`flex-1 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
                 activeTab === "style" ? "border-accent text-accent font-bold bg-surface" : "border-transparent text-text-secondary hover:text-white"
@@ -162,7 +234,7 @@ export default function Editor() {
             >
               Style
             </button>
-            <button 
+            <button
               onClick={() => setActiveTab("transcript")}
               className={`flex-1 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
                 activeTab === "transcript" ? "border-accent text-accent font-bold bg-surface" : "border-transparent text-text-secondary hover:text-white"
@@ -178,12 +250,12 @@ export default function Editor() {
                 <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Theme</p>
                 <div className="grid grid-cols-2 gap-2">
                   {["Bold White", "Classic", "Neon", "Typewriter"].map((t) => (
-                    <button 
+                    <button
                       key={t}
                       onClick={() => setTheme(t)}
                       className={`py-2.5 px-3 text-xs rounded-lg border transition-all text-left ${
-                        theme === t 
-                          ? "border-accent-2 bg-accent-2/10 text-white font-medium" 
+                        theme === t
+                          ? "border-accent-2 bg-accent-2/10 text-white font-medium"
                           : "border-border-strong text-text-secondary hover:border-text-secondary"
                       }`}
                     >
@@ -212,7 +284,7 @@ export default function Editor() {
 
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Font Family</p>
-                <select 
+                <select
                   value={fontFamily}
                   onChange={(e) => setFontFamily(e.target.value)}
                   className="w-full bg-surface-2 border border-border-strong rounded-lg p-3 text-xs text-white focus:outline-none focus:border-accent-2"
@@ -230,7 +302,7 @@ export default function Editor() {
                   {[
                     { label: "Small", class: "text-lg" },
                     { label: "Medium", class: "text-2xl" },
-                    { label: "Large", class: "text-4xl" }
+                    { label: "Large", class: "text-4xl" },
                   ].map((s) => (
                     <button
                       key={s.label}
@@ -245,21 +317,87 @@ export default function Editor() {
                 </div>
               </div>
 
+              {/* 3x3 position grid */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Screen Position</p>
+                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Position</p>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {POSITION_ROWS.map((r) =>
+                    POSITION_COLS.map((c) => {
+                      const key = r + c;
+                      const active = position === key;
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => setPosition(key)}
+                          title={key}
+                          className={`h-9 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
+                            active ? "border-accent bg-accent/10" : "border-border-strong hover:border-text-secondary"
+                          }`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-accent" : "bg-text-muted"}`} />
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Caption background */}
+              <div>
+                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Background</p>
                 <div className="grid grid-cols-3 gap-2">
-                  {["top", "center", "bottom"].map((pos) => (
+                  {[
+                    { key: "none", label: "None" },
+                    { key: "semi", label: "Semi" },
+                    { key: "solid", label: "Solid" },
+                  ].map((opt) => (
                     <button
-                      key={pos}
-                      onClick={() => setPosition(pos)}
-                      className={`py-2 text-xs border rounded-lg capitalize transition-colors ${
-                        position === pos ? "border-accent bg-accent/10 text-white" : "border-border-strong text-text-secondary"
+                      key={opt.key}
+                      onClick={() => setCaptionBg(opt.key)}
+                      className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
+                        captionBg === opt.key ? "border-accent bg-accent/10 text-white" : "border-border-strong text-text-secondary"
                       }`}
                     >
-                      {pos}
+                      {opt.label}
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Saved presets */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary">Presets</p>
+                  <button
+                    onClick={saveCurrentPreset}
+                    className="text-[11px] font-mono text-accent-2 border border-accent-2/40 rounded px-2 py-1 hover:bg-accent-2/10 transition-colors cursor-pointer"
+                  >
+                    + Save current
+                  </button>
+                </div>
+                {savedPresets.length === 0 ? (
+                  <p className="text-[11px] text-text-muted">No presets saved yet.</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {savedPresets.map((p, i) => (
+                      <div key={i} className="flex items-center border border-border-strong rounded-lg p-2">
+                        <button
+                          onClick={() => loadPreset(p)}
+                          className="text-[11px] text-white text-left hover:text-accent-2 transition-colors flex-1 cursor-pointer"
+                        >
+                          {p.name}
+                        </button>
+                        <button
+                          onClick={() => deletePreset(i)}
+                          className="text-[10px] text-text-muted hover:text-red-400 px-1 cursor-pointer"
+                          title="Delete preset"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -271,13 +409,11 @@ export default function Editor() {
               </p>
 
               {transcriptLines.map((line, index) => (
-                <div 
+                <div
                   key={line.id || index}
-                  onClick={() => handleLineClick(index)} 
+                  onClick={() => handleLineClick(index)}
                   className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                    activeLineIndex === index 
-                      ? "border-accent bg-accent/5 shadow-md" 
-                      : "border-border bg-surface-2/40 hover:border-border-strong"
+                    activeLineIndex === index ? "border-accent bg-accent/5 shadow-md" : "border-border bg-surface-2/40 hover:border-border-strong"
                   }`}
                 >
                   <div className="flex justify-between items-center mb-2">
@@ -288,7 +424,7 @@ export default function Editor() {
                   <div className="space-y-2">
                     <div>
                       <label className="text-[10px] font-mono text-text-muted block mb-0.5">Main Text</label>
-                      <input 
+                      <input
                         type="text"
                         value={line.text}
                         onChange={(e) => handleTranscriptChange(index, "text", e.target.value)}
@@ -297,7 +433,7 @@ export default function Editor() {
                     </div>
                     <div>
                       <label className="text-[10px] font-mono text-text-muted block mb-0.5">Highlighted Keyword</label>
-                      <input 
+                      <input
                         type="text"
                         value={line.highlight}
                         onChange={(e) => handleTranscriptChange(index, "highlight", e.target.value)}
@@ -314,14 +450,16 @@ export default function Editor() {
 
       <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black/40 border border-border rounded-xl">
         <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-6">Interactive Preview</p>
-        
-        <div className={`relative bg-surface-2 border border-border-strong rounded-lg overflow-hidden shadow-2xl transition-all duration-300 flex items-center justify-center ${
-          aspectRatio === "9:16" ? "aspect-[9/16] h-[580px]" : aspectRatio === "1:1" ? "aspect-square h-[440px]" : "aspect-video h-[320px]"
-        }`}>
-          <video 
+
+        <div
+          className={`relative bg-surface-2 border border-border-strong rounded-lg overflow-hidden shadow-2xl transition-all duration-300 flex items-center justify-center ${
+            aspectRatio === "9:16" ? "aspect-[9/16] h-[580px]" : aspectRatio === "1:1" ? "aspect-square h-[440px]" : "aspect-video h-[320px]"
+          }`}
+        >
+          <video
             ref={videoRef}
             src={videoSrc}
-            onTimeUpdate={handleTimeUpdate} 
+            onTimeUpdate={handleTimeUpdate}
             className="absolute inset-0 w-full h-full object-cover z-0"
             autoPlay
             loop
@@ -340,15 +478,15 @@ export default function Editor() {
             </div>
           )}
 
-          <div className={`absolute left-0 w-full px-6 text-center z-20 flex flex-col items-center justify-center pointer-events-none transition-all duration-300 ${getPositionClass()}`}>
-            <p 
+          <div
+            className={`absolute left-0 w-full px-6 z-20 flex flex-col justify-center pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}
+          >
+            <p
               style={{ fontFamily: fontFamily }}
               className={`font-bold uppercase tracking-wide leading-tight uppercase ${fontSize} ${getThemeClasses()}`}
             >
               {currentLine.text}{" "}
-              <span style={{ color: highlightColor }}>
-                {currentLine.highlight}
-              </span>
+              <span style={{ color: highlightColor }}>{currentLine.highlight}</span>
             </p>
           </div>
         </div>
@@ -366,36 +504,107 @@ export default function Editor() {
 
         <div className="bg-surface border border-border rounded-xl p-5 space-y-6">
           <div>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Fit</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "crop", label: "Crop" },
+                { key: "square", label: "Square" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setFit(opt.key)}
+                  className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
+                    fit === opt.key ? "border-accent-2 bg-accent-2/10 text-white font-medium" : "border-border-strong text-text-secondary"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Corners</p>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { key: "square", label: "Square" },
+                { key: "round", label: "Round" },
+              ].map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setCorners(opt.key)}
+                  className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
+                    corners === opt.key ? "border-accent-2 bg-accent-2/10 text-white font-medium" : "border-border-strong text-text-secondary"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
             <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Aspect Ratio</p>
             <RatioPicker value={aspectRatio} onChange={setAspectRatio} />
+          </div>
+
+          <div>
+            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Title Overlay</p>
+            <input
+              type="text"
+              value={titleText}
+              onChange={(e) => setTitleText(e.target.value)}
+              placeholder="Optional title text…"
+              className="w-full bg-surface-2 border border-border-strong rounded-lg p-2.5 text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-accent-2 mb-2.5"
+            />
+            <div className="flex flex-wrap gap-2">
+              {["#FFFFFF", "#D7FF3F", "#7BE1D1", "#F87171", "#60A5FA", "#F472B6"].map((color) => (
+                <button
+                  key={color}
+                  onClick={() => setTitleColor(color)}
+                  className={`w-6 h-6 rounded-full border-2 transition-all ${
+                    titleColor === color ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
+                  }`}
+                  style={{ backgroundColor: color }}
+                />
+              ))}
+            </div>
           </div>
 
           <div>
             <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Branding</p>
             <label className="flex items-center justify-between p-3 border border-border-strong rounded-lg bg-surface-2 cursor-pointer">
               <span className="text-xs text-white">Include Watermark</span>
-              <input 
-                type="checkbox" 
-                checked={watermark} 
+              <input
+                type="checkbox"
+                checked={watermark}
                 onChange={(e) => setWatermark(e.target.checked)}
                 className="accent-accent w-4 h-4"
               />
             </label>
           </div>
+        </div>
 
-          <div className="p-3.5 border border-border rounded-lg bg-surface-2/30 space-y-2">
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Selected Preset</span>
-              <span className="text-white font-mono">{theme}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Caption Lines</span>
-              <span className="text-white font-mono">{transcriptLines.length} Segments</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Target Resolution</span>
-              <span className="text-accent-2 font-mono">1080p HD</span>
-            </div>
+        <div className="p-3.5 border border-border rounded-lg bg-surface-2/30 space-y-2">
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Selected Preset</span>
+            <span className="text-white font-mono">{theme}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Clip Request</span>
+            <span className="text-white font-mono">{clipCount} × {clipLength === "auto" ? "Auto" : `${clipLength}s`}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Caption Language</span>
+            <span className="text-white font-mono">{captionLang}</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Caption Lines</span>
+            <span className="text-white font-mono">{transcriptLines.length} Segments</span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-text-muted">Target Resolution</span>
+            <span className="text-accent-2 font-mono">1080p HD</span>
           </div>
         </div>
       </div>

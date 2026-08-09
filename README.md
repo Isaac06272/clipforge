@@ -1,49 +1,61 @@
 # 🎬 Clipforge
 
-**An AI-powered video editing agent that transforms long-form content and YouTube links into short, viral, caption-ready clips.**
+**An AI-powered video editing agent that turns long videos into short, caption-ready clips — then lets you fine-tune every detail before exporting.**
 
 ## 📖 App Description
-Clipforge is an intelligent, automated video processing pipeline designed for content creators. Instead of manually scrubbing through timelines to find the best moments, users simply upload a video (or paste a YouTube link), choose their desired aspect ratio, and let the AI take over. 
+Clipforge is an intelligent video pipeline for content creators. Instead of scrubbing timelines to find the best moments, you upload a video, pick how many clips you want and how long they should be, and the AI takes over.
 
-Powered by Google's Gemini AI and FFmpeg, Clipforge acts as a virtual video editor. It listens to the entire audio track, dynamically identifies the most engaging segments, cuts the video into short-form clips (TikTok, Shorts, Reels), and burns in perfectly timed subtitles.
+Powered by Google's Gemini AI and FFmpeg, Clipforge acts as a virtual video editor. It listens to the entire audio track, identifies the most engaging segments, cuts them into short-form clips (TikTok, Shorts, Reels), and burns in perfectly timed subtitles — then hands you an interactive editor to style everything before export.
 
 ## ⚡ The Problem It Solves
-Creating short-form content from podcasts, lectures, or vlogs is historically a massive time sink. The traditional workflow requires:
+Creating short-form content from podcasts, lectures, or vlogs is historically a massive time sink:
 1. Watching the entire video to find a 15-second highlight.
-2. Manually keyframing and cropping a 16:9 landscape video into a 9:16 vertical format.
-3. Transcribing the audio by hand (or using expensive third-party tools) and manually syncing SRT timestamps.
+2. Manually keyframing and cropping 16:9 footage into 9:16 vertical format.
+3. Transcribing audio by hand and syncing SRT timestamps.
 
-**Clipforge reduces a multi-hour editing workflow into a 2-minute automated background job.** It democratizes high-quality video editing, allowing anyone to generate ready-to-post social media assets instantly.
+**Clipforge reduces a multi-hour editing workflow into a 2-minute automated job** followed by a quick, CapCut-style polish pass.
 
 ## ✨ Key Features
-*   **Smart AI Highlight Extraction:** Analyzes full video audio to intelligently window the most engaging 10-20 second highlights.
-*   **Custom Prompt Editing:** Includes an agentic "Custom Mode" where users can instruct the AI (e.g., *"Find the part where they talk about coffee"*), and the engine will actively seek and cut that specific segment.
-*   **Dynamic Auto-Cropping:** Converts standard 16:9 footage into true 9:16 (Portrait) or 1:1 (Square) formats without stretching or distortion.
-*   **Zero-Friction YouTube Support:** Natively downloads and processes YouTube URLs on the backend.
-*   **Burned-in AI Subtitles:** Generates highly accurate, perfectly synced, high-visibility subtitles burned directly into the output MP4.
-*   **Resilient Background Processing:** Utilizes a Redis/BullMQ worker architecture to ensure long FFmpeg renders never crash the frontend UI.
+*   **Smart AI Highlight Extraction:** Analyzes full video audio to find the most engaging segments — with a configurable clip count (1–6) and target length (Auto/30s/45s/60s).
+*   **Accurate Transcripts:** Per-clip transcription in your chosen language, with punchline highlighting.
+*   **Interactive Editor:** Pick a highlight, then restyle it — caption themes, highlight color, fonts, a 9-position caption grid, caption backgrounds, corner rounding, square fit, title overlays, and saved style presets.
+*   **Dynamic Auto-Cropping:** Converts 16:9 footage into 9:16 (Portrait) or 1:1 (Square) without stretching or distortion.
+*   **Burned-in Subtitles:** SRT subtitles are rendered directly into the final MP4, not just overlaid in a player.
 
 ## 🛠️ Tech Stack
-This project leverages a modern, decoupled architecture to handle heavy computational rendering alongside real-time AI inference.
-
 **Frontend:**
 *   React & React Router (Single Page Application)
 *   Tailwind CSS (Responsive, modern UI/UX)
 *   Vite (Build tool)
 
 **Backend & Processing:**
-*   Node.js & Express (API & File routing)
+*   Node.js & Express (API & file routing)
 *   FFmpeg / `fluent-ffmpeg` (Core video/audio manipulation engine)
-*   `@distube/ytdl-core` (YouTube stream extraction)
-
-**AI & Queue Infrastructure:**
-*   Google Gemini API (Gemini 2.5 Flash for multimodal audio transcription and JSON-structured decision making)
-*   BullMQ & Redis (Robust job queuing for handling heavy video files without timeouts)
-*   Render (Cloud hosting with customized Node environments)
+*   Google Gemini API (Gemini 2.5 Flash — audio transcription and structured clip decisions)
+*   In-process job queue (no Redis, no external services — the worker runs inside the API process)
 
 ## ⚙️ How It Works (The AI Pipeline)
-1.  **Ingestion:** The user uploads a file or provides a YouTube URL.
-2.  **Extraction:** The background worker extracts the full master audio track using FFmpeg.
-3.  **AI Analysis:** The audio is sent to Gemini, heavily prompted to act as a senior video editor. It returns a strict JSON array containing optimal timestamps, durations, and generated SRT subtitle strings.
-4.  **Execution:** The worker loops through the AI's choices, instructing FFmpeg to seek exactly to the timestamps, apply the dynamic crop filters, and burn the SRT text onto the video frames.
-5.  **Delivery:** The user UI updates in real-time via polling, finally presenting multiple finished clip candidates ready for download.
+1.  **Ingest & Configure:** The user uploads a video and picks the output ratio, clip count, target clip length, and spoken language.
+2.  **Extraction:** The worker extracts the full master audio track using FFmpeg.
+3.  **AI Analysis:** The audio is sent to Gemini, which acts as a senior video editor and returns a strict JSON array of timestamps, durations, and transcript lines.
+4.  **Cut & Preview:** FFmpeg cuts each highlight with the ratio-based crop filter; the frontend lists them for selection.
+5.  **Edit:** The user opens a clip in the interactive editor to restyle captions, position, background, corners, fit, and title.
+6.  **Render & Export:** The editor's settings are sent back; FFmpeg burns the subtitles (and any title overlay) and applies the final fit/corner treatments. The finished MP4 is served for download.
+
+## 🚀 Local Development
+**Backend** (`backend/`):
+```bash
+npm install
+GEMINI_API_KEY=your_key npm run dev   # starts on :4000
+```
+No Redis needed — jobs run in-process.
+
+**Frontend** (`frontend/`):
+```bash
+npm install
+# make sure .env sets VITE_API_URL=http://localhost:4000
+npm run dev                           # starts Vite dev server
+```
+
+## ☁️ Deployment
+The backend is a single Express process (Dockerfile provided) — the only required env var is `GEMINI_API_KEY`. The frontend is a static site with `VITE_API_URL` pointing at the backend's public URL. A connected Render repo auto-deploys on push.

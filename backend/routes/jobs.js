@@ -28,7 +28,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 router.post("/", upload.single("video"), (req, res) => {
-  const { ratio, mode, prompt, clipCount, clipLength } = req.body || {};
+  const { ratio, mode, prompt, clipCount, clipLength, captionLang } = req.body || {};
 
   if (!req.file) {
     return res.status(400).json({ error: "No video file provided" });
@@ -37,7 +37,7 @@ router.post("/", upload.single("video"), (req, res) => {
   const fileName = req.file.originalname;
   const filePath = req.file.path; // This is now a guaranteed absolute path
 
-  const job = createJob({ fileName, filePath, ratio, mode, prompt, clipCount, clipLength });
+  const job = createJob({ fileName, filePath, ratio, mode, prompt, clipCount, clipLength, captionLang });
   res.json({ jobId: job.id });
 });
 
