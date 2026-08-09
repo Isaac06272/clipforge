@@ -9,7 +9,7 @@ backend/outputs/
 # env & secrets
 .env
 .env.local
-.env.production
+# .env.production is committed so the Render build bakes in the backend URL
 
 # logs & misc
 *.log
