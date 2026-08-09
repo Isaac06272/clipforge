@@ -216,6 +216,13 @@ const ASS_ALIGN = { tl: 7, tc: 8, tr: 9, ml: 4, mc: 5, mr: 6, bl: 1, bc: 2, br: 
 export async function renderFinal(job, config) {
   console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
   const inputPath = path.join(outputDir, config.sourceFileSlug);
+
+  if (!fs.existsSync(inputPath)) {
+    throw new Error(
+      `Source file not found: ${config.sourceFileSlug}. ` +
+        "The server may have restarted and lost the file. Please re-upload and try again."
+    );
+  }
   const outputFileName = `FINAL_${Date.now()}_${config.sourceFileSlug}`;
   const outputPath = path.join(outputDir, outputFileName);
   const srtPath = path.join(outputDir, `subtitles_${job.id}.srt`);

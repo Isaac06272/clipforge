@@ -65,7 +65,7 @@ router.post("/render-final", async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error("Final render routing error:", error);
-    res.status(500).json({ error: "Failed to process the final video render." });
+    res.status(500).json({ error: error.message || "Failed to process the final video render." });
   }
 });
 

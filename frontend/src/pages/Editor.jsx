@@ -506,7 +506,7 @@ export default function Editor() {
           </div>
         )}
 
-        <div className="bg-surface border border-border rounded-xl p-5 space-y-6 flex-1 overflow-y-auto min-h-0">
+        <div className="bg-surface border border-border rounded-xl p-5 space-y-4 flex-shrink-0">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Branding</p>
             <label className="flex items-center justify-between p-3 border border-border-strong rounded-lg bg-surface-2 cursor-pointer">
@@ -519,28 +519,27 @@ export default function Editor() {
               />
             </label>
           </div>
-        </div>
-
-        <div className="p-3.5 border border-border rounded-lg bg-surface-2/30 space-y-2 flex-shrink-0">
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">Selected Preset</span>
-            <span className="text-white font-mono">{theme}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">Clip Request</span>
-            <span className="text-white font-mono">{clipCount} × {clipLength === "auto" ? "Auto" : `${clipLength}s`}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">Caption Language</span>
-            <span className="text-white font-mono">{captionLang}</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">Caption Lines</span>
-            <span className="text-white font-mono">{transcriptLines.length} Segments</span>
-          </div>
-          <div className="flex justify-between text-[11px]">
-            <span className="text-text-muted">Target Resolution</span>
-            <span className="text-accent-2 font-mono">1080p HD</span>
+          <div className="border-t border-border pt-4 space-y-2">
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">Selected Preset</span>
+              <span className="text-white font-mono">{theme}</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">Clip Request</span>
+              <span className="text-white font-mono">{clipCount} × {clipLength === "auto" ? "Auto" : `${clipLength}s`}</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">Caption Language</span>
+              <span className="text-white font-mono">{captionLang}</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">Caption Lines</span>
+              <span className="text-white font-mono">{transcriptLines.length} Segments</span>
+            </div>
+            <div className="flex justify-between text-[11px]">
+              <span className="text-text-muted">Target Resolution</span>
+              <span className="text-accent-2 font-mono">1080p HD</span>
+            </div>
           </div>
         </div>
       </div>
