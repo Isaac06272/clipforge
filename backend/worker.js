@@ -207,17 +207,11 @@ export async function processJob(job) {
 // PHASE 2: THE FINAL RENDER (FROM FRONTEND)
 // config = the request body sent by the Editor:
 //   sourceFileSlug, transcript, theme, highlightColor,
-//   fontFamily, fontSize, position (9-grid), ratio,
-//   fit, corners, titleText, titleColor, captionBg, ...
+//   fontFamily, fontSize, position (9-grid), ratio, captionBg, ...
 // ==========================================
 
 // ASS Alignment codes for the 9 caption positions (row = t/m/b, col = l/c/r)
 const ASS_ALIGN = { tl: 7, tc: 8, tr: 9, ml: 4, mc: 5, mr: 6, bl: 1, bc: 2, br: 3 };
-
-// Rounded-rect alpha test for geq: 1 inside the shape (white), 0 in the corners.
-// R = 24px corner radius, W/H are geq runtime variables (input dimensions).
-const ROUND_RADIUS = 24;
-const ROUNDED_RECT_EXPR = `if(lte(abs(X-W/2),W/2-${ROUND_RADIUS})*lte(abs(Y-H/2),H/2-${ROUND_RADIUS})+lte(hypot(max(abs(X-W/2)-(W/2-${ROUND_RADIUS}),0),max(abs(Y-H/2)-(H/2-${ROUND_RADIUS}),0)),${ROUND_RADIUS}),255,0)`;
 
 export async function renderFinal(job, config) {
   console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
@@ -294,55 +288,6 @@ export async function renderFinal(job, config) {
       outputs: "cap",
     },
   ];
-  let cur = "cap";
-
-  // Optional title overlay (drawtext). Sanitize to keep the filter graph happy.
-  const rawTitle = String(config.titleText || "").trim();
-  if (rawTitle) {
-    const safeTitle = rawTitle.replace(/\\/g, "/").replace(/['"%]/g, "");
-    const titleFont = String(config.fontFamily || "Impact").replace(/['":,]/g, "");
-    const titleColorArg = String(config.titleColor || "#FFFFFF").replace("#", "0x");
-    filters.push({
-      filter: "drawtext",
-      options: `text='${safeTitle}':font='${titleFont}':fontcolor=${titleColorArg}:fontsize=34:x=(w-text_w)/2:y=36`,
-      inputs: cur,
-      outputs: "titled",
-    });
-    cur = "titled";
-  }
-
-  // Square fit: pad the frame into a square canvas (contain, not crop).
-  if (config.fit === "square") {
-    // Target square = max(iw, ih); center the frame. Probing isn't needed
-    // because pad accepts these expressions directly.
-    filters.push({
-      filter: "pad",
-      options: "w='max(iw,ih)':h='max(iw,ih)':x='(max(iw,ih)-iw)/2':y='(max(iw,ih)-ih)/2':color=black",
-      inputs: cur,
-      outputs: "squared",
-    });
-    cur = "squared";
-  }
-
-  // Rounded corners: mask the alpha, composite over solid black.
-  if (config.corners === "round") {
-    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "base" });
-    // Black opaque background of identical size (derived from the same stream).
-    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "bgraw" });
-    filters.push({ filter: "geq", options: "r=0:g=0:b=0:a=255", inputs: "bgraw", outputs: "bg" });
-    // Grayscale mask: white inside the rounded rect, black corners. alphamerge
-    // uses the second input's luminance as alpha.
-    filters.push({ filter: "format", options: "rgba", inputs: cur, outputs: "maskraw" });
-    filters.push({
-      filter: "geq",
-      options: `r=${ROUNDED_RECT_EXPR}:g=${ROUNDED_RECT_EXPR}:b=${ROUNDED_RECT_EXPR}:a=255`,
-      inputs: "maskraw",
-      outputs: "mask",
-    });
-    filters.push({ filter: "alphamerge", inputs: ["base", "mask"], outputs: "rounded" });
-    filters.push({ filter: "overlay", options: "0:0", inputs: ["bg", "rounded"], outputs: "outv" });
-    cur = "outv";
-  }
 
   await new Promise((resolve, reject) => {
     ffmpeg(inputPath)

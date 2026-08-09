@@ -20,6 +20,25 @@ export default function Export() {
     }
   }
 
+  async function downloadClip(clip) {
+    try {
+      const res = await fetch(`${API_BASE_URL}${clip.downloadUrl}`);
+      if (!res.ok) throw new Error(`Download failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = clip.downloadUrl.split("/").pop() || "clipforge-clip.mp4";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      alert("Could not download the video.");
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto px-8 py-14">
       <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-2">step 05</p>
@@ -40,13 +59,13 @@ export default function Export() {
               <p className="font-mono text-[11px] text-text-secondary mb-3">
                 {clip.duration} · {clip.ratio} · AI-generated
               </p>
-              <a
-                href={`${API_BASE_URL}${clip.downloadUrl}`}
-                download
-                className="inline-block text-[11px] bg-accent text-bg font-medium rounded-md px-3 py-2 text-center hover:opacity-90 transition-opacity"
+              <button
+                type="button"
+                onClick={() => downloadClip(clip)}
+                className="inline-block text-[11px] bg-accent text-bg font-medium rounded-md px-3 py-2 text-center hover:opacity-90 transition-opacity cursor-pointer"
               >
                 ↓ Download MP4
-              </a>
+              </button>
             </div>
           </div>
         ))}

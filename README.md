@@ -18,7 +18,7 @@ Creating short-form content from podcasts, lectures, or vlogs is historically a 
 ## ✨ Key Features
 *   **Smart AI Highlight Extraction:** Analyzes full video audio to find the most engaging segments — with a configurable clip count (1–6) and target length (Auto/30s/45s/60s).
 *   **Accurate Transcripts:** Per-clip transcription in your chosen language, with punchline highlighting.
-*   **Interactive Editor:** Pick a highlight, then restyle it — caption themes, highlight color, fonts, a 9-position caption grid, caption backgrounds, corner rounding, square fit, title overlays, and saved style presets.
+*   **Interactive Editor:** Pick a highlight, then restyle it — caption themes, highlight color, fonts, a 9-position caption grid, caption backgrounds, and saved style presets.
 *   **Dynamic Auto-Cropping:** Converts 16:9 footage into 9:16 (Portrait) or 1:1 (Square) without stretching or distortion.
 *   **Burned-in Subtitles:** SRT subtitles are rendered directly into the final MP4, not just overlaid in a player.
 
@@ -39,7 +39,7 @@ Creating short-form content from podcasts, lectures, or vlogs is historically a 
 2.  **Extraction:** The worker extracts the full master audio track using FFmpeg.
 3.  **AI Analysis:** The audio is sent to Gemini, which acts as a senior video editor and returns a strict JSON array of timestamps, durations, and transcript lines.
 4.  **Cut & Preview:** FFmpeg cuts each highlight with the ratio-based crop filter; the frontend lists them for selection.
-5.  **Edit:** The user opens a clip in the interactive editor to restyle captions, position, background, corners, fit, and title.
+5.  **Edit:** The user opens a clip in the interactive editor to restyle captions, position, and background.
 6.  **Render & Export:** The editor's settings are sent back; FFmpeg burns the subtitles (and any title overlay) and applies the final fit/corner treatments. The finished MP4 is served for download.
 
 ## 🚀 Local Development

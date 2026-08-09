@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import RatioPicker from "../components/RatioPicker";
 import { useSession } from "../lib/SessionContext";
 
 const PRESET_KEY = "clipforge_presets";
@@ -26,12 +25,9 @@ export default function Editor() {
   const [position, setPosition] = useState("mc"); // 9-grid key
   const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
   const [aspectRatio, setAspectRatio] = useState(activeClip?.ratio || "9:16");
-  const [fit, setFit] = useState("crop"); // crop | square
-  const [corners, setCorners] = useState("square"); // square | round
-  const [titleText, setTitleText] = useState("");
-  const [titleColor, setTitleColor] = useState("#FFFFFF");
   const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState("");
   const [savedPresets, setSavedPresets] = useState([]);
 
   const [transcriptLines, setTranscriptLines] = useState([]);
@@ -109,9 +105,6 @@ export default function Editor() {
       fontSize,
       position,
       captionBg,
-      corners,
-      titleText,
-      titleColor,
     };
     const next = [...savedPresets, preset];
     setSavedPresets(next);
@@ -125,9 +118,6 @@ export default function Editor() {
     setFontSize(p.fontSize);
     setPosition(p.position);
     setCaptionBg(p.captionBg);
-    setCorners(p.corners);
-    setTitleText(p.titleText || "");
-    setTitleColor(p.titleColor || "#FFFFFF");
   }
 
   function deletePreset(index) {
@@ -139,6 +129,7 @@ export default function Editor() {
   // --- Sends the customized settings back to the backend ---
   async function handleExport() {
     setExporting(true);
+    setExportError("");
     try {
       const payload = {
         isFinalRender: true,
@@ -152,10 +143,6 @@ export default function Editor() {
         ratio: aspectRatio,
         watermark,
         transcript: transcriptLines,
-        fit,
-        corners,
-        titleText,
-        titleColor,
         captionBg,
       };
 
@@ -165,7 +152,16 @@ export default function Editor() {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error("Failed to render final video.");
+      if (!response.ok) {
+        let message = "Failed to render final video.";
+        try {
+          const body = await response.json();
+          if (body.error) message = body.error;
+        } catch {
+          // non-JSON error body — keep the default message
+        }
+        throw new Error(message);
+      }
 
       const finalData = await response.json();
 
@@ -174,7 +170,7 @@ export default function Editor() {
       navigate("/export");
     } catch (err) {
       console.error(err);
-      alert("Something went wrong during the final export.");
+      setExportError(err.message || "Something went wrong during the final export.");
     } finally {
       setExporting(false);
     }
@@ -213,19 +209,22 @@ export default function Editor() {
 
   if (!activeClip) return null;
 
+  const previewHeight =
+    aspectRatio === "9:16" ? "aspect-[9/16] h-[min(580px,58vh)]" : aspectRatio === "1:1" ? "aspect-square h-[min(440px,58vh)]" : "aspect-video h-[min(320px,58vh)]";
+
   return (
-    <div className="min-h-screen flex flex-col md:flex-row gap-6 p-6 max-w-[1600px] mx-auto text-text-primary">
+    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col md:flex-row gap-6 p-6 max-w-[1600px] mx-auto text-text-primary">
       <p className="hidden md:block fixed top-5 right-6 z-50 font-mono text-xs uppercase tracking-widest text-accent-2">step 04</p>
-      <div className="w-full md:w-80 flex flex-col gap-4">
+      <div className="w-full md:w-80 md:h-full flex flex-col gap-4 min-h-0">
         <button
           onClick={() => navigate("/select")}
-          className="text-xs font-mono uppercase tracking-wider text-text-secondary hover:text-white text-left transition-colors flex items-center gap-1"
+          className="text-xs font-mono uppercase tracking-wider text-text-secondary hover:text-white text-left transition-colors flex items-center gap-1 flex-shrink-0"
         >
           ← Back to clips
         </button>
 
-        <div className="bg-surface border border-border rounded-xl flex-1 flex flex-col overflow-hidden">
-          <div className="flex border-b border-border bg-surface-2/50">
+        <div className="bg-surface border border-border rounded-xl flex-1 flex flex-col overflow-hidden min-h-0">
+          <div className="flex border-b border-border bg-surface-2/50 flex-shrink-0">
             <button
               onClick={() => setActiveTab("style")}
               className={`flex-1 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
@@ -245,7 +244,7 @@ export default function Editor() {
           </div>
 
           {activeTab === "style" && (
-            <div className="p-5 overflow-y-auto space-y-6">
+            <div className="p-5 overflow-y-auto space-y-6 min-h-0">
               <div>
                 <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Theme</p>
                 <div className="grid grid-cols-2 gap-2">
@@ -403,7 +402,7 @@ export default function Editor() {
           )}
 
           {activeTab === "transcript" && (
-            <div className="p-4 overflow-y-auto space-y-4">
+            <div className="p-4 overflow-y-auto space-y-4 min-h-0">
               <p className="text-xs text-text-muted leading-relaxed">
                 Click any line to preview it on the video. Edit text directly to fix mistakes.
               </p>
@@ -448,13 +447,11 @@ export default function Editor() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black/40 border border-border rounded-xl">
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black/40 border border-border rounded-xl min-h-0">
         <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-6">Interactive Preview</p>
 
         <div
-          className={`relative bg-surface-2 border border-border-strong rounded-lg overflow-hidden shadow-2xl transition-all duration-300 flex items-center justify-center ${
-            aspectRatio === "9:16" ? "aspect-[9/16] h-[580px]" : aspectRatio === "1:1" ? "aspect-square h-[440px]" : "aspect-video h-[320px]"
-          }`}
+          className={`relative bg-surface-2 border border-border-strong rounded-lg overflow-hidden shadow-2xl transition-all duration-300 flex items-center justify-center ${previewHeight}`}
         >
           <video
             ref={videoRef}
@@ -492,85 +489,24 @@ export default function Editor() {
         </div>
       </div>
 
-      <div className="w-full md:w-80 flex flex-col gap-4">
+      <div className="w-full md:w-80 md:h-full flex flex-col gap-4 min-h-0">
         <button
           type="button"
           onClick={handleExport}
           disabled={exporting}
-          className="w-full bg-accent text-bg font-bold text-sm rounded-lg py-4 shadow-[0_0_15px_rgba(163,230,53,0.3)] hover:shadow-[0_0_25px_rgba(163,230,53,0.5)] transition-all disabled:opacity-50 cursor-pointer"
+          className="w-full bg-accent text-bg font-bold text-sm rounded-lg py-4 shadow-[0_0_15px_rgba(163,230,53,0.3)] hover:shadow-[0_0_25px_rgba(163,230,53,0.5)] transition-all disabled:opacity-50 cursor-pointer flex-shrink-0"
         >
           {exporting ? "Rendering Final Video…" : "⚡ Export Video"}
         </button>
 
-        <div className="bg-surface border border-border rounded-xl p-5 space-y-6">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Fit</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: "crop", label: "Crop" },
-                { key: "square", label: "Square" },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setFit(opt.key)}
-                  className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
-                    fit === opt.key ? "border-accent-2 bg-accent-2/10 text-white font-medium" : "border-border-strong text-text-secondary"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
+        {exportError && (
+          <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3.5 py-3 text-[11px] text-red-300 leading-relaxed flex-shrink-0">
+            <p className="font-mono text-[10px] uppercase tracking-wide text-red-400 mb-1">Export failed</p>
+            {exportError}
           </div>
+        )}
 
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Corners</p>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { key: "square", label: "Square" },
-                { key: "round", label: "Round" },
-              ].map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setCorners(opt.key)}
-                  className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
-                    corners === opt.key ? "border-accent-2 bg-accent-2/10 text-white font-medium" : "border-border-strong text-text-secondary"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Aspect Ratio</p>
-            <RatioPicker value={aspectRatio} onChange={setAspectRatio} />
-          </div>
-
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Title Overlay</p>
-            <input
-              type="text"
-              value={titleText}
-              onChange={(e) => setTitleText(e.target.value)}
-              placeholder="Optional title text…"
-              className="w-full bg-surface-2 border border-border-strong rounded-lg p-2.5 text-xs text-white placeholder:text-text-muted focus:outline-none focus:border-accent-2 mb-2.5"
-            />
-            <div className="flex flex-wrap gap-2">
-              {["#FFFFFF", "#D7FF3F", "#7BE1D1", "#F87171", "#60A5FA", "#F472B6"].map((color) => (
-                <button
-                  key={color}
-                  onClick={() => setTitleColor(color)}
-                  className={`w-6 h-6 rounded-full border-2 transition-all ${
-                    titleColor === color ? "border-white scale-110" : "border-transparent opacity-70 hover:opacity-100"
-                  }`}
-                  style={{ backgroundColor: color }}
-                />
-              ))}
-            </div>
-          </div>
-
+        <div className="bg-surface border border-border rounded-xl p-5 space-y-6 flex-1 overflow-y-auto min-h-0">
           <div>
             <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Branding</p>
             <label className="flex items-center justify-between p-3 border border-border-strong rounded-lg bg-surface-2 cursor-pointer">
@@ -585,7 +521,7 @@ export default function Editor() {
           </div>
         </div>
 
-        <div className="p-3.5 border border-border rounded-lg bg-surface-2/30 space-y-2">
+        <div className="p-3.5 border border-border rounded-lg bg-surface-2/30 space-y-2 flex-shrink-0">
           <div className="flex justify-between text-[11px]">
             <span className="text-text-muted">Selected Preset</span>
             <span className="text-white font-mono">{theme}</span>
