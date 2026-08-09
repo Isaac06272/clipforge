@@ -4,6 +4,7 @@ import Landing from "./pages/Landing";
 import Configure from "./pages/Configure";
 import Processing from "./pages/Processing";
 import Select from "./pages/Select";
+import Editor from "./pages/Editor";
 import Export from "./pages/Export";
 import History from "./pages/History";
 
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/configure" element={<Configure />} />
         <Route path="/processing" element={<Processing />} />
         <Route path="/select" element={<Select />} />
+        <Route path="/editor" element={<Editor />} />
         <Route path="/export" element={<Export />} />
         <Route path="/history" element={<History />} />
       </Routes>

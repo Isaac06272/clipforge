@@ -1,5 +1,3 @@
-import { Worker } from "bullmq";
-import Redis from "ioredis";
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -9,10 +7,6 @@ import { GoogleAIFileManager } from "@google/generative-ai/server";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379", {
-  maxRetriesPerRequest: null,
-});
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const fileManager = new GoogleAIFileManager(process.env.GEMINI_API_KEY);
@@ -39,91 +33,16 @@ function formatSrtTime(timeStr) {
   return `00:${minutes}:${seconds},000`;
 }
 
-const worker = new Worker("video-jobs", async (job) => {
-  const data = job.data;
-  console.log(`[Worker] Starting job ${job.id}`);
+// ==========================================
+// PHASE 1: AI CLIP EXTRACTION (INITIAL UPLOAD)
+// Runs in-process, writing progress/candidates
+// straight onto the job record in jobStore.
+// ==========================================
+export async function processJob(job) {
+  const { fileName, filePath, ratio, mode, prompt } = job.data;
+  job.status = "processing";
 
-  // ==========================================
-  // PHASE 2: THE FINAL RENDER (FROM FRONTEND)
-  // ==========================================
-  if (data.isFinalRender) {
-    console.log(`[Worker] Executing Final Render for ${data.sourceFileSlug}`);
-    const inputPath = path.join(outputDir, data.sourceFileSlug);
-    const outputFileName = `FINAL_${Date.now()}_${data.sourceFileSlug}`;
-    const outputPath = path.join(outputDir, outputFileName);
-    const srtPath = path.join(outputDir, `subtitles_${job.id}.srt`);
-
-    let srtContent = "";
-    data.transcript.forEach((line, index) => {
-      srtContent += `${index + 1}\n`;
-      srtContent += `${formatSrtTime(line.startTime)} --> ${formatSrtTime(line.endTime)}\n`;
-      let text = line.text;
-      if (line.highlight && line.highlight.trim() !== "") {
-         text += ` <font color="${data.highlightColor}">${line.highlight}</font>`;
-      }
-      srtContent += `${text}\n\n`;
-    });
-    fs.writeFileSync(srtPath, srtContent);
-
-    let fontName = data.fontFamily || "Impact";
-    let fontSizeNum = data.fontSize === "text-lg" ? 14 : data.fontSize === "text-4xl" ? 28 : 22;
-    let marginV = data.position === "top" ? 320 : data.position === "center" ? 180 : 40;
-    
-    let primaryColor = "&H00FFFFFF"; 
-    let outlineColor = "&H00000000"; 
-    let outlineSize = 2;
-    let shadow = 0;
-
-    if (data.theme === "Neon") {
-      primaryColor = "&H00FFFF00"; 
-      outlineColor = "&H00D4B606"; 
-      outlineSize = 3;
-    } else if (data.theme === "Classic") {
-      outlineColor = "&H00000000";
-      outlineSize = 0;
-      shadow = 2; 
-    } else if (data.theme === "Typewriter") {
-      primaryColor = "&H0000FF00"; 
-      fontName = "Courier New";
-      outlineSize = 1;
-    }
-
-    await new Promise((resolve, reject) => {
-      let command = ffmpeg(inputPath).outputOptions(["-preset ultrafast", "-threads 2"]);
-      let filterChain = `subtitles=${srtPath}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=1,Outline=${outlineSize},Shadow=${shadow},Alignment=2,MarginV=${marginV}'`;
-
-      command
-        .videoFilters(filterChain)
-        .output(outputPath)
-        .on("end", resolve)
-        .on("error", (err) => {
-          console.error("[Worker] FFmpeg Final Render Error:", err);
-          reject(err);
-        })
-        .run();
-    });
-
-    if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
-
-    return { 
-      finalClip: {
-        id: `FINAL_${job.id}`,
-        name: "Custom Export",
-        duration: "Final",
-        ratio: data.ratio,
-        mode: "Custom",
-        url: `/outputs/${outputFileName}`,
-        downloadUrl: `/outputs/${outputFileName}`
-      }
-    };
-  }
-
-  // ==========================================
-  // PHASE 1: AI CLIP EXTRACTION (INITIAL UPLOAD)
-  // ==========================================
-  const { fileName, filePath, ratio, mode, prompt } = data;
-  
-  let inputPath = filePath; 
+  let inputPath = filePath;
   if (!inputPath || !fs.existsSync(inputPath)) {
     inputPath = path.join(uploadsDir, fileName);
   }
@@ -133,10 +52,10 @@ const worker = new Worker("video-jobs", async (job) => {
     throw new Error("Uploaded video file could not be located on the server.");
   }
 
-  await job.updateProgress(20);
+  job.progress = 20;
   const fullAudioFileName = `${job.id}_full_audio.mp3`;
   const fullAudioPath = path.join(outputDir, fullAudioFileName);
-  
+
   console.log(`[Worker] Extracting audio from ${inputPath}`);
   await new Promise((resolve, reject) => {
     ffmpeg(inputPath)
@@ -150,7 +69,7 @@ const worker = new Worker("video-jobs", async (job) => {
       .run();
   });
 
-  await job.updateProgress(40);
+  job.progress = 40;
   console.log(`[Worker] Uploading audio to Gemini...`);
   const uploadResult = await fileManager.uploadFile(fullAudioPath, {
     mimeType: "audio/mp3",
@@ -159,13 +78,16 @@ const worker = new Worker("video-jobs", async (job) => {
 
   let clipsData = [];
   try {
-    const aiModel = genAI.getGenerativeModel({ 
+    const aiModel = genAI.getGenerativeModel({
       model: "gemini-2.5-flash",
-      generationConfig: { responseMimeType: "application/json" }
+      generationConfig: { responseMimeType: "application/json" },
     });
-    
+
     const basePrompt = `You are a professional video editor. Listen to this entire audio track and find the 3 most engaging segments (10-20 seconds each).`;
-    const modePrompt = mode === "prompt" && prompt ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.` : `CRITICAL INSTRUCTION: Focus on rapid dialogue, punchlines, or key highlights.`;
+    const modePrompt =
+      mode === "prompt" && prompt
+        ? `CRITICAL INSTRUCTION: The user specifically requested: "${prompt}". You MUST find clips that match this request.`
+        : `CRITICAL INSTRUCTION: Focus on rapid dialogue, punchlines, or key highlights.`;
     const schemaPrompt = `
     Analyze the audio and return a JSON array containing exactly 3 clip objects.
     Each object must have exactly these keys:
@@ -173,7 +95,7 @@ const worker = new Worker("video-jobs", async (job) => {
     - "duration": the length of the clip (in seconds, as a number, between 10 and 20).
     - "score": a string representing how good the clip is (e.g. "98% match").
     - "transcript": An array of line objects representing the spoken text for this clip.
-    
+
     TRANSCRIPT ARRAY RULES:
     1. Break the spoken text into segments of EXACTLY 1 to 3 words per line.
     2. Each line object must have these exact keys:
@@ -189,27 +111,26 @@ const worker = new Worker("video-jobs", async (job) => {
       try {
         result = await aiModel.generateContent([
           { fileData: { mimeType: uploadResult.file.mimeType, fileUri: uploadResult.file.uri } },
-          `${basePrompt}\n${modePrompt}\n${schemaPrompt}`
+          `${basePrompt}\n${modePrompt}\n${schemaPrompt}`,
         ]);
-        break; 
+        break;
       } catch (err) {
         retries--;
         console.warn(`[Worker] Gemini API hiccup. Retries left: ${retries}. Message: ${err.message}`);
-        if (retries === 0) throw err; 
-        
+        if (retries === 0) throw err;
+
         console.log(`[Worker] Waiting 5 seconds before retrying Gemini...`);
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, 5000));
       }
     }
-    
+
     let rawText = result.response.text();
     rawText = rawText.replace(/```json/gi, "").replace(/```/g, "").trim();
     clipsData = JSON.parse(rawText);
-    
-    if (clipsData.clips) {
-        clipsData = clipsData.clips;
-    }
 
+    if (clipsData.clips) {
+      clipsData = clipsData.clips;
+    }
   } catch (err) {
     console.error("[Worker] Gemini API or JSON Parse Error:", err.message);
     throw new Error("Failed to process AI transcripts after multiple attempts.");
@@ -218,58 +139,136 @@ const worker = new Worker("video-jobs", async (job) => {
     if (fs.existsSync(fullAudioPath)) fs.unlinkSync(fullAudioPath);
   }
 
-  await job.updateProgress(60);
+  job.progress = 60;
   const generatedClips = [];
-  
+
   for (let i = 0; i < clipsData.length; i++) {
     const aiClip = clipsData[i];
     const clipBaseName = `${job.id}_clip${i + 1}`;
     const outputFileName = `${clipBaseName}.mp4`;
     const outputPath = path.join(outputDir, outputFileName);
-    
+
     const formattedTranscript = aiClip.transcript.map((line, index) => ({
       id: index + 1,
       startTime: line.startTime,
       endTime: line.endTime,
       text: line.text,
-      highlight: line.highlight || ""
+      highlight: line.highlight || "",
     }));
 
     console.log(`[Worker] Rendering clean cut ${i + 1}...`);
     await new Promise((resolve, reject) => {
       let command = ffmpeg(inputPath)
-        .seekInput(aiClip.startTime) 
-        .setDuration(aiClip.duration)   
-        // --- FIX: Removed the conflicting output options here! ---
+        .seekInput(aiClip.startTime)
+        .setDuration(aiClip.duration)
         .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28"]);
 
-      let filterChain = ratio === "9:16" ? "scale=-1:720,crop=406:720" : ratio === "1:1" ? "scale=-1:720,crop=720:720" : "scale=-2:720";
+      let filterChain =
+        ratio === "9:16" ? "scale=-1:720,crop=406:720" : ratio === "1:1" ? "scale=-1:720,crop=720:720" : "scale=-2:720";
       command
         .videoFilters(filterChain)
         .output(outputPath)
         .on("end", resolve)
         .on("error", (err) => {
-           console.error(`[Worker] FFmpeg Cut Error for clip ${i + 1}:`, err);
-           reject(err);
+          console.error(`[Worker] FFmpeg Cut Error for clip ${i + 1}:`, err);
+          reject(err);
         })
         .run();
     });
 
     generatedClips.push({
       id: clipBaseName,
-      score: aiClip.score || `${95 - (i * 2)}% match`,
+      score: aiClip.score || `${95 - i * 2}% match`,
       duration: `0:${Math.round(aiClip.duration).toString().padStart(2, "0")}`,
       url: `/outputs/${outputFileName}`,
       fileSlug: outputFileName,
       ratio: ratio,
-      transcript: formattedTranscript
+      transcript: formattedTranscript,
     });
-    
-    await job.updateProgress(60 + Math.floor(((i + 1) / clipsData.length) * 40));
+
+    job.progress = 60 + Math.floor(((i + 1) / clipsData.length) * 40);
   }
 
-  await job.updateProgress(100);
+  job.progress = 100;
+  job.candidates = generatedClips;
+  job.status = "done";
   return { clips: generatedClips };
-}, { connection: redisConnection });
+}
 
-console.log("FFmpeg Master AI Editor Worker is online and waiting for jobs...");
+// ==========================================
+// PHASE 2: THE FINAL RENDER (FROM FRONTEND)
+// config = the request body sent by the Editor:
+//   sourceFileSlug, transcript, theme, highlightColor,
+//   fontFamily, fontSize, position, ratio, watermark, ...
+// ==========================================
+export async function renderFinal(job, config) {
+  console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
+  const inputPath = path.join(outputDir, config.sourceFileSlug);
+  const outputFileName = `FINAL_${Date.now()}_${config.sourceFileSlug}`;
+  const outputPath = path.join(outputDir, outputFileName);
+  const srtPath = path.join(outputDir, `subtitles_${job.id}.srt`);
+
+  let srtContent = "";
+  config.transcript.forEach((line, index) => {
+    srtContent += `${index + 1}\n`;
+    srtContent += `${formatSrtTime(line.startTime)} --> ${formatSrtTime(line.endTime)}\n`;
+    let text = line.text;
+    if (line.highlight && line.highlight.trim() !== "") {
+      text += ` <font color="${config.highlightColor}">${line.highlight}</font>`;
+    }
+    srtContent += `${text}\n\n`;
+  });
+  fs.writeFileSync(srtPath, srtContent);
+
+  let fontName = config.fontFamily || "Impact";
+  let fontSizeNum = config.fontSize === "text-lg" ? 14 : config.fontSize === "text-4xl" ? 28 : 22;
+  let marginV = config.position === "top" ? 320 : config.position === "center" ? 180 : 40;
+
+  let primaryColor = "&H00FFFFFF";
+  let outlineColor = "&H00000000";
+  let outlineSize = 2;
+  let shadow = 0;
+
+  if (config.theme === "Neon") {
+    primaryColor = "&H00FFFF00";
+    outlineColor = "&H00D4B606";
+    outlineSize = 3;
+  } else if (config.theme === "Classic") {
+    outlineColor = "&H00000000";
+    outlineSize = 0;
+    shadow = 2;
+  } else if (config.theme === "Typewriter") {
+    primaryColor = "&H0000FF00";
+    fontName = "Courier New";
+    outlineSize = 1;
+  }
+
+  await new Promise((resolve, reject) => {
+    let command = ffmpeg(inputPath).outputOptions(["-preset ultrafast", "-threads 2"]);
+    let filterChain = `subtitles=${srtPath}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=1,Outline=${outlineSize},Shadow=${shadow},Alignment=2,MarginV=${marginV}'`;
+
+    command
+      .videoFilters(filterChain)
+      .output(outputPath)
+      .on("end", resolve)
+      .on("error", (err) => {
+        console.error("[Worker] FFmpeg Final Render Error:", err);
+        reject(err);
+      })
+      .run();
+  });
+
+  if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
+
+  return {
+    finalClip: {
+      id: `FINAL_${job.id}`,
+      name: "Custom Export",
+      duration: "Final",
+      ratio: config.ratio,
+      mode: "Custom",
+      url: `/outputs/${outputFileName}`,
+      downloadUrl: `/outputs/${outputFileName}`,
+    },
+  };
+}

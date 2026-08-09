@@ -21,7 +21,7 @@ export default function History() {
             >
               <div>
                 <p className="text-sm font-medium mb-0.5">
-                  {h.count} clip{h.count > 1 ? "s" : ""} · {h.mode === "prompt" ? "custom prompt" : "auto edit"}
+                  {h.count} clip{h.count > 1 ? "s" : ""} · AI-generated
                 </p>
                 <p className="font-mono text-[11px] text-text-muted">
                   {h.time} · {h.ratio}

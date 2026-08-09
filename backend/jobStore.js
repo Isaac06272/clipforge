@@ -1,44 +1,56 @@
-import { Queue } from "bullmq";
-import Redis from "ioredis";
+import { processJob } from "./worker.js";
 
-const redisConnection = new Redis(process.env.REDIS_URL || "redis://127.0.0.1:6379", {
-  maxRetriesPerRequest: null,
-});
+// In-process job store — replaces BullMQ/Redis entirely.
+//
+// Job state lives in memory for the life of the process, so a deploy or
+// restart loses any in-flight job. That's an accepted trade-off for a
+// personal tool (Render's paid Redis add-on would otherwise be required).
+const jobs = new Map();
+let sequence = 0;
 
-export const videoQueue = new Queue("video-jobs", { connection: redisConnection });
+export function createJob(data) {
+  const jobId = `job_${Date.now()}_${++sequence}`;
+  const job = {
+    id: jobId,
+    data,
+    status: "queued", // queued | processing | done | failed
+    progress: 0, // 0-100
+    candidates: [], // clips produced by Phase 1
+    error: null,
+    createdAt: Date.now(),
+  };
+  jobs.set(jobId, job);
 
-export async function createJob({ fileName, filePath, ratio, mode, prompt }) {
-  const jobId = `job_${Date.now()}`;
-  
-  await videoQueue.add(
-    "process-video", 
-    { fileName, filePath, ratio, mode, prompt }, 
-    { jobId }
-  );
-  
-  return jobId;
+  // Fire-and-forget. The worker writes status/progress/candidates directly
+  // onto the record; errors are captured on the job instead of crashing.
+  processJob(job).catch((err) => {
+    console.error(`[JobStore] Job ${jobId} failed:`, err.message);
+    job.status = "failed";
+    job.error = err.message;
+  });
+
+  return job;
 }
 
-export async function getJobStatus(id) {
-  const job = await videoQueue.getJob(id);
+export function getJobStatus(id) {
+  const job = jobs.get(id);
   if (!job) return null;
 
-  const state = await job.getState();
-  const progress = job.progress || 0;
-  
-  const stepIndex = progress < 25 ? 0 : progress < 50 ? 1 : progress < 75 ? 2 : progress < 100 ? 3 : 4;
+  const stepIndex =
+    job.progress < 25 ? 0 : job.progress < 50 ? 1 : job.progress < 75 ? 2 : job.progress < 100 ? 3 : 4;
 
   return {
-    status: state === "completed" ? "done" : state === "failed" ? "error" : "processing",
-    stepIndex: state === "completed" ? 4 : stepIndex,
-    progress: state === "completed" ? 100 : progress,
+    status: job.status === "done" ? "done" : job.status === "failed" ? "error" : "processing",
+    stepIndex: job.status === "done" ? 4 : stepIndex,
+    progress: job.status === "done" ? 100 : job.progress,
+    ...(job.error ? { error: job.error } : {}),
   };
 }
 
-export async function getCandidatesForJob(id) {
-  const job = await videoQueue.getJob(id);
-  if (!job || !job.returnvalue || !job.returnvalue.clips) {
-    return [];
-  }
-  return job.returnvalue.clips;
+export function getCandidatesForJob(id) {
+  return jobs.get(id)?.candidates ?? [];
+}
+
+export function getJobById(id) {
+  return jobs.get(id) || null;
 }

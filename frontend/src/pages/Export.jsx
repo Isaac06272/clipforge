@@ -38,7 +38,7 @@ export default function Export() {
             <div className="flex-1">
               <h4 className="font-display text-sm font-medium mb-0.5">{clip.name}</h4>
               <p className="font-mono text-[11px] text-text-secondary mb-3">
-                {clip.duration} · {clip.ratio} · {clip.mode === "prompt" ? "custom prompt" : "auto edit"}
+                {clip.duration} · {clip.ratio} · AI-generated
               </p>
               <a
                 href={`${API_BASE_URL}${clip.downloadUrl}`}

@@ -5,12 +5,10 @@ import RatioPicker from "../components/RatioPicker";
 
 export default function Configure() {
   const navigate = useNavigate();
-  const { 
-    file, setFile, 
-    ratio, setRatio, 
-    mode, setMode, 
-    prompt, setPrompt, 
-    startProcessing 
+  const {
+    file, setFile,
+    ratio, setRatio,
+    startProcessing
   } = useSession();
   
   const [starting, setStarting] = useState(false);
@@ -83,41 +81,6 @@ export default function Configure() {
           Output ratio — editable later
         </p>
         <RatioPicker value={ratio} onChange={setRatio} />
-      </div>
-
-      <div className="mb-7">
-        <p className="font-mono text-xs uppercase tracking-wide text-text-secondary mb-2.5">Editing mode</p>
-        <div className="grid grid-cols-2 gap-2.5 mb-3">
-          <button
-            type="button"
-            onClick={() => setMode("auto")}
-            className={`text-left rounded-lg border p-3.5 transition-colors ${
-              mode === "auto" ? "border-accent-2 bg-accent-2/10" : "border-border-strong"
-            }`}
-          >
-            <h4 className="font-display text-sm font-medium mb-1">Auto edit</h4>
-            <p className="text-xs text-text-secondary">Zooms, captions, and pacing chosen for you.</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("prompt")}
-            className={`text-left rounded-lg border p-3.5 transition-colors ${
-              mode === "prompt" ? "border-accent-2 bg-accent-2/10" : "border-border-strong"
-            }`}
-          >
-            <h4 className="font-display text-sm font-medium mb-1">Custom prompt</h4>
-            <p className="text-xs text-text-secondary">Describe your own edit style.</p>
-          </button>
-        </div>
-        {mode === "prompt" && (
-          <textarea
-            rows={3}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g. fast punchy cuts, zoom on every laugh, bold yellow captions"
-            className="w-full bg-surface border border-border-strong rounded-lg p-3 text-sm placeholder:text-text-muted focus:outline-none focus:border-accent-2"
-          />
-        )}
       </div>
 
       {error && <p className="text-xs text-red-400 mb-3">{error}</p>}

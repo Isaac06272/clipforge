@@ -7,7 +7,7 @@ export default function Editor() {
   const navigate = useNavigate();
   const location = useLocation();
   const videoRef = useRef(null); 
-  const { setResults } = useSession(); // Used to pass the final video to the Export page
+  const { jobId, setResults } = useSession(); // jobId needed by render-final; setResults passes the final video to Export
   
   const activeClip = location.state?.activeClip;
   const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:4000";
@@ -83,7 +83,8 @@ export default function Editor() {
     try {
       const payload = {
         isFinalRender: true,
-        sourceFileSlug: activeClip.fileSlug, 
+        jobId,
+        sourceFileSlug: activeClip.fileSlug,
         theme,
         highlightColor,
         fontFamily,

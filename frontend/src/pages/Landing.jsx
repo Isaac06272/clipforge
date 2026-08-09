@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 const FEATURES = [
   { title: "Auto Captions", desc: "High-accuracy transcription with dynamic styles tailored for short-form." },
   { title: "Smart Zooms", desc: "Algorithmic face and action tracking for precise vertical reframing, keeping the subject in focus." },
-  { title: "Custom Prompt", desc: "Direct the AI engine with natural language instructions to find specific moments or apply unique edits." },
+  { title: "Full Editor", desc: "Tune every clip — themes, fonts, positions, colors, and captions — before you export." },
 ];
 
 export default function Landing() {
