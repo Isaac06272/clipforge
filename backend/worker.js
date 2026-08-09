@@ -21,17 +21,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-function formatSrtTime(timeStr) {
-  if (!timeStr) return "00:00:00,000";
-  const parts = timeStr.split(":");
-  let minutes = "00";
-  let seconds = "00";
-  if (parts.length === 2) {
-    minutes = parts[0].padStart(2, "0");
-    seconds = parts[1].padStart(2, "0");
-  }
-  return `00:${minutes}:${seconds},000`;
-}
+
 
 // ==========================================
 // PHASE 1: AI CLIP EXTRACTION (INITIAL UPLOAD)
@@ -213,36 +203,43 @@ export async function processJob(job) {
 // ASS Alignment codes for the 9 caption positions (row = t/m/b, col = l/c/r)
 const ASS_ALIGN = { tl: 7, tc: 8, tr: 9, ml: 4, mc: 5, mr: 6, bl: 1, bc: 2, br: 3 };
 
-export async function renderFinal(job, config) {
-  console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
-  const inputPath = path.join(outputDir, config.sourceFileSlug);
+// Convert #RRGGBB to ASS &H00BBGGRR color string
+function hexToASS(hex) {
+  if (!hex || typeof hex !== "string") return "&H00FFFFFF";
+  const h = hex.replace("#", "");
+  if (h.length !== 6) return "&H00FFFFFF";
+  const r = h.substring(0, 2);
+  const g = h.substring(2, 4);
+  const b = h.substring(4, 6);
+  return `&H00${b}${g}${r}`.toUpperCase();
+}
 
-  if (!fs.existsSync(inputPath)) {
-    throw new Error(
-      `Source file not found: ${config.sourceFileSlug}. ` +
-        "The server may have restarted and lost the file. Please re-upload and try again."
-    );
+// Convert SRT-style time "MM:SS" or "HH:MM:SS" to ASS time "H:MM:SS.cc"
+function toASSTime(timeStr) {
+  if (!timeStr) return "0:00:00.00";
+  const clean = String(timeStr).replace(",", ".");
+  if (!clean.includes(":")) {
+    const sec = parseFloat(clean) || 0;
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return `${h}:${String(m).padStart(2, "0")}:${s.toFixed(2).padStart(5, "0")}`;
   }
-  const outputFileName = `FINAL_${Date.now()}_${config.sourceFileSlug}`;
-  const outputPath = path.join(outputDir, outputFileName);
-  const srtPath = path.join(outputDir, `subtitles_${job.id}.srt`);
+  const parts = clean.split(":").map(parseFloat);
+  if (parts.length === 2) {
+    return `0:${String(parts[0]).padStart(2, "0")}:${parts[1].toFixed(2).padStart(5, "0")}`;
+  }
+  if (parts.length === 3) {
+    return `${parts[0]}:${String(parts[1]).padStart(2, "0")}:${parts[2].toFixed(2).padStart(5, "0")}`;
+  }
+  return "0:00:00.00";
+}
 
-  let srtContent = "";
-  config.transcript.forEach((line, index) => {
-    srtContent += `${index + 1}\n`;
-    srtContent += `${formatSrtTime(line.startTime)} --> ${formatSrtTime(line.endTime)}\n`;
-    let text = line.text;
-    if (line.highlight && line.highlight.trim() !== "") {
-      text += ` <font color="${config.highlightColor}">${line.highlight}</font>`;
-    }
-    srtContent += `${text}\n\n`;
-  });
-  fs.writeFileSync(srtPath, srtContent);
+// Generate a full ASS subtitle file with all styling baked in
+function generateASS(transcript, config) {
+  const fontName = config.fontFamily || "Impact";
+  const fontSize = config.fontSize === "text-lg" ? 14 : config.fontSize === "text-4xl" ? 28 : 22;
 
-  let fontName = config.fontFamily || "Impact";
-  let fontSizeNum = config.fontSize === "text-lg" ? 14 : config.fontSize === "text-4xl" ? 28 : 22;
-
-  // 9-grid position → ASS alignment + margins
   const pos = config.position || "mc";
   const row = pos[0] || "m";
   const col = pos[1] || "c";
@@ -255,7 +252,7 @@ export async function renderFinal(job, config) {
   let outlineColor = "&H00000000";
   let outlineSize = 2;
   let shadow = 0;
-  let borderStyle = 1; // outline-only (ASS)
+  let borderStyle = 1;
   let backColour = "&H00000000";
 
   if (config.theme === "Neon") {
@@ -272,8 +269,6 @@ export async function renderFinal(job, config) {
     outlineSize = 1;
   }
 
-  // Caption background: BoxStyle 3 = solid box behind text, using BackColour.
-  // ASS colors are &HAABBGGRR (AA 00 = opaque, FF = transparent).
   const bg = config.captionBg || "none";
   if (bg === "solid") {
     borderStyle = 3;
@@ -282,17 +277,63 @@ export async function renderFinal(job, config) {
     shadow = 0;
   } else if (bg === "semi") {
     borderStyle = 3;
-    backColour = "&H66000000"; // ~60% opaque black
+    backColour = "&H66000000";
     outlineSize = 0;
     shadow = 0;
   }
 
-  const filters = [
-    {
-      filter: "subtitles",
-      options: `${srtPath.replace(/\\/g, "/")}:force_style='FontName=${fontName},FontSize=${fontSizeNum},PrimaryColour=${primaryColor},OutlineColour=${outlineColor},BorderStyle=${borderStyle},BackColour=${backColour},Outline=${outlineSize},Shadow=${shadow},Alignment=${alignment},MarginV=${marginV},MarginL=${marginL},MarginR=${marginR}'`,
-    },
-  ];
+  const highlightASS = hexToASS(config.highlightColor);
+
+  // Build dialogue lines
+  const dialogues = (transcript || []).map((line) => {
+    const start = toASSTime(line.startTime);
+    const end = toASSTime(line.endTime);
+    let text = (line.text || "").replace(/\n/g, "\\N");
+    if (line.highlight && line.highlight.trim() !== "") {
+      text += ` {\\c${highlightASS}}${line.highlight}{\\c${primaryColor}}`;
+    }
+    return `Dialogue: 0,${start},${end},Default,,0,0,0,,${text}`;
+  });
+
+  return `[Script Info]
+Title: Clipforge Subtitles
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+WrapStyle: 0
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${fontName},${fontSize},${primaryColor},&H000000FF,${outlineColor},${backColour},-1,0,0,0,100,100,0,0,${borderStyle},${outlineSize},${shadow},${alignment},${marginL},${marginR},${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+${dialogues.join("\n")}
+`;
+}
+
+export async function renderFinal(job, config) {
+  console.log(`[Worker] Executing Final Render for ${config.sourceFileSlug}`);
+  const inputPath = path.join(outputDir, config.sourceFileSlug);
+
+  if (!fs.existsSync(inputPath)) {
+    throw new Error(
+      `Source file not found: ${config.sourceFileSlug}. ` +
+        "The server may have restarted and lost the file. Please re-upload and try again."
+    );
+  }
+  const outputFileName = `FINAL_${Date.now()}_${config.sourceFileSlug}`;
+  const outputPath = path.join(outputDir, outputFileName);
+  const assPath = path.join(outputDir, `subtitles_${job.id}.ass`);
+
+  // Write ASS file with all styling baked in
+  const assContent = generateASS(config.transcript, config);
+  fs.writeFileSync(assPath, assContent);
+  console.log(`[Worker] ASS subtitle written to ${assPath}`);
+
+  // Use the ass filter — no force_style needed, all styling is in the file
+  const assPathPosix = assPath.replace(/\\/g, "/");
+  const filters = [{ filter: "ass", options: assPathPosix }];
 
   await new Promise((resolve, reject) => {
     ffmpeg(inputPath)
@@ -307,7 +348,7 @@ export async function renderFinal(job, config) {
       .run();
   });
 
-  if (fs.existsSync(srtPath)) fs.unlinkSync(srtPath);
+  if (fs.existsSync(assPath)) fs.unlinkSync(assPath);
 
   return {
     finalClip: {

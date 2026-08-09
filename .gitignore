@@ -6,6 +6,9 @@ backend/node_modules/
 backend/uploads/
 backend/outputs/
 
+# build output
+frontend/dist/
+
 # env & secrets
 .env
 .env.local
