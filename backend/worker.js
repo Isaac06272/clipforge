@@ -161,16 +161,17 @@ export async function processJob(job) {
         .setDuration(aiClip.duration)
         .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28"]);
 
-      // Use more robust filter chains with proper scaling
+      // Simpler filter chains - more compatible
       let filterChain;
       if (ratio === "9:16") {
-        // Scale to at least 406px width, then crop to 9:16 at 720px height
-        filterChain = "scale=406:720:force_original_aspect_ratio=increase,crop=406:720";
+        // Scale height to 720, crop center to 406x720 (9:16)
+        filterChain = "scale=-2:720,crop=406:720";
       } else if (ratio === "1:1") {
+        // Scale to 720x720 square
         filterChain = "scale=720:720:force_original_aspect_ratio=increase,crop=720:720";
       } else {
-        // 16:9 landscape
-        filterChain = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
+        // 16:9 landscape - scale to 720p
+        filterChain = "scale=-2:720";
       }
       command
         .videoFilters(filterChain)
