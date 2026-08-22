@@ -500,7 +500,7 @@ export default function Editor() {
             />
 
             {/* Caption overlay */}
-            <div className={`absolute inset-0 z-20 flex flex-col justify-center pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}>
+            <div className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}>
               <div className={`caption-overlay ${getThemeClasses()}`}>
                 <p className="caption-text" style={{ fontFamily, fontSize: getFontSizePx(), padding: captionBg === 'none' ? 0 : 'var(--space-2) var(--space-4)', backgroundColor: captionBg === 'solid' ? 'rgba(0,0,0,0.8)' : captionBg === 'semi' ? 'rgba(0,0,0,0.5)' : 'transparent', borderRadius: captionBg !== 'none' ? 'var(--radius-md)' : 0 }}>
                   {currentLine.text}{" "}
