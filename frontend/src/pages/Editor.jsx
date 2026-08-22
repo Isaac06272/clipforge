@@ -194,17 +194,18 @@ export default function Editor() {
   }
 
   // 9-grid positioning for the on-screen caption preview
+  // In flex-col: justify-* = vertical (top/middle/bottom), items-* = horizontal (left/center/right)
   function getPositionClass() {
     const row = position ? position[0] : "m";
-    const map = { t: "items-start", m: "items-center", b: "items-end" };
-    return map[row] || "items-center";
+    const map = { t: "justify-start", m: "justify-center", b: "justify-end" };
+    return map[row] || "justify-center";
   }
 
   function getAlignClass() {
     const col = position ? position[1] : "c";
-    if (col === "l") return "justify-start text-left";
-    if (col === "r") return "justify-end text-right";
-    return "justify-center text-center";
+    if (col === "l") return "items-start text-left";
+    if (col === "r") return "items-end text-right";
+    return "items-center text-center";
   }
 
   function getFontSizePx() {
