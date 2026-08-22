@@ -22,7 +22,7 @@ export default function Editor() {
   const [highlightColor, setHighlightColor] = useState("#EAB308");
   const [fontFamily, setFontFamily] = useState("Impact");
   const [fontSize, setFontSize] = useState("text-2xl");
-    const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
+  const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
   const [aspectRatio, setAspectRatio] = useState(activeClip?.ratio || "9:16");
   const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -138,7 +138,6 @@ export default function Editor() {
         highlightColor,
         fontFamily,
         fontSize,
-        position,
         ratio: aspectRatio,
         watermark,
         transcript: transcriptLines,
