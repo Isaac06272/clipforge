@@ -648,7 +648,7 @@ body {
   color: var(--color-text-muted);
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -658,8 +658,8 @@ body {
 }
 
 .tab.active {
-  background: var(--color-bg-card);
-  color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
   box-shadow: var(--shadow-sm);
 }
 
@@ -741,9 +741,19 @@ body {
   border-radius: var(--radius-xl);
   background: var(--color-bg-card);
   transition: all var(--transition-base);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
 }
 
-.drop-zone:hover,
+.drop-zone:hover:not(.active):not(.drag-active) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-muted);
+  border-style: solid;
+}
+
 .drop-zone.active {
   border-color: var(--color-accent);
   background: var(--color-accent-muted);
@@ -754,6 +764,13 @@ body {
   border-color: var(--color-accent);
   background: var(--color-accent-muted);
   box-shadow: var(--shadow-glow);
+}
+
+/* Ensure hover works on label elements */
+label.drop-zone:hover:not(.active):not(.drag-active) {
+  border-color: var(--color-accent);
+  background: var(--color-accent-muted);
+  border-style: solid;
 }
 
 /* Video player wrapper */

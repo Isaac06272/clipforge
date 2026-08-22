@@ -36,7 +36,7 @@ export default function Header() {
                   key={s.path}
                   className={`flex items-center gap-2 px-4 py-2 text-caption font-medium transition-all ${
                     isActive
-                      ? "text-accent-glow bg-accent-muted"
+                      ? "text-accent-glow bg-accent-muted rounded-xl"
                       : isComplete
                       ? "text-success"
                       : "text-text-muted hover:text-text-secondary"
