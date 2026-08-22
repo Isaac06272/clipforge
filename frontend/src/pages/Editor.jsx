@@ -213,9 +213,9 @@ export default function Editor() {
     aspectRatio === "9:16" ? "aspect-[9/16] h-[min(580px,58vh)]" : aspectRatio === "1:1" ? "aspect-square h-[min(440px,58vh)]" : "aspect-video h-[min(320px,58vh)]";
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col md:flex-row bg-bg">
+    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col md:flex-row bg-bg overflow-hidden">
       {/* Left Panel — Controls */}
-      <div className="w-full md:w-80 md:h-full flex flex-col border-r border-border bg-bg-elevated/50">
+      <div className="w-full md:w-80 md:h-full flex flex-col border-r border-border bg-bg-elevated/50 overflow-hidden">
         {/* Back button + tabs */}
         <div className="flex-shrink-0 p-4 border-b border-border">
           <button
@@ -473,20 +473,20 @@ export default function Editor() {
       </div>
 
       {/* Center Panel — Preview */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-bg min-h-0">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 bg-bg min-h-0 overflow-hidden">
         <div className="w-full max-w-md">
-          <div className="text-center mb-4">
+          <div className="text-center mb-3">
             <span className="text-label text-accent-glow">Interactive Preview</span>
           </div>
 
           <div
-            className={`relative bg-bg-surface border border-border rounded-xl overflow-hidden shadow-lg transition-all duration-300 flex items-center justify-center ${previewHeight}`}
+            className={`relative bg-bg-surface border border-border rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${previewHeight} mx-auto`}
           >
             <video
               ref={videoRef}
               src={videoSrc}
               onTimeUpdate={handleTimeUpdate}
-              className="absolute inset-0 w-full h-full object-cover z-0"
+              className="w-full h-full object-cover z-0"
               autoPlay
               loop
               muted
@@ -520,8 +520,8 @@ export default function Editor() {
       </div>
 
       {/* Right Panel — Export */}
-      <div className="w-full md:w-80 md:h-full flex flex-col border-l border-border bg-bg-elevated/50">
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="w-full md:w-80 md:h-full flex flex-col border-l border-border bg-bg-elevated/50 overflow-hidden">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
           <div className="pt-2">
             <label className="label">Branding</label>
             <label className="flex items-center justify-between p-3 border border-border rounded-lg bg-bg-card cursor-pointer">
