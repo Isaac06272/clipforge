@@ -207,6 +207,11 @@ export default function Editor() {
     return "justify-center text-center";
   }
 
+  function getFontSizePx() {
+    const map = { "text-lg": "1.125rem", "text-2xl": "1.5rem", "text-4xl": "2.25rem" };
+    return map[fontSize] || "1.5rem";
+  }
+
   if (!activeClip) return null;
 
   const previewHeight =
@@ -497,7 +502,7 @@ export default function Editor() {
             {/* Caption overlay */}
             <div className={`absolute inset-0 z-20 flex flex-col justify-center pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}>
               <div className={`caption-overlay ${getThemeClasses()}`}>
-                <p className="caption-text">
+                <p className="caption-text" style={{ fontFamily, fontSize: getFontSizePx(), padding: captionBg === 'none' ? 0 : 'var(--space-2) var(--space-4)', backgroundColor: captionBg === 'solid' ? 'rgba(0,0,0,0.8)' : captionBg === 'semi' ? 'rgba(0,0,0,0.5)' : 'transparent', borderRadius: captionBg !== 'none' ? 'var(--radius-md)' : 0 }}>
                   {currentLine.text}{" "}
                   <span className="caption-highlight" style={{ color: highlightColor }}>{currentLine.highlight}</span>
                 </p>
