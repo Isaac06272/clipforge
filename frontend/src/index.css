@@ -812,11 +812,11 @@ label.drop-zone:hover:not(.active):not(.drag-active) {
   position: absolute;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   padding: var(--space-6);
   pointer-events: none;
   z-index: 5;
+  /* Remove default centering - positioning handled by outer wrapper */
 }
 
 .caption-text {
