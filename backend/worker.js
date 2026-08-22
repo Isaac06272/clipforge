@@ -161,8 +161,17 @@ export async function processJob(job) {
         .setDuration(aiClip.duration)
         .outputOptions(["-preset ultrafast", "-threads 2", "-crf 28"]);
 
-      let filterChain =
-        ratio === "9:16" ? "scale=-1:720,crop=406:720" : ratio === "1:1" ? "scale=-1:720,crop=720:720" : "scale=-2:720";
+      // Use more robust filter chains with proper scaling
+      let filterChain;
+      if (ratio === "9:16") {
+        // Scale to at least 406px width, then crop to 9:16 at 720px height
+        filterChain = "scale=406:720:force_original_aspect_ratio=increase,crop=406:720";
+      } else if (ratio === "1:1") {
+        filterChain = "scale=720:720:force_original_aspect_ratio=increase,crop=720:720";
+      } else {
+        // 16:9 landscape
+        filterChain = "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2";
+      }
       command
         .videoFilters(filterChain)
         .output(outputPath)
