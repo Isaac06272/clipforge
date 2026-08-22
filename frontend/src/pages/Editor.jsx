@@ -182,29 +182,29 @@ export default function Editor() {
   function getThemeClasses() {
     switch (theme) {
       case "Neon":
-        return "text-cyan-300 drop-shadow-[0_0_12px_rgba(6,182,212,0.8)]";
+        return "caption-theme-neon";
       case "Classic":
-        return "text-white bg-black/75 px-4 py-1.5 rounded-md";
+        return "caption-theme-classic";
       case "Typewriter":
-        return "text-green-400 font-mono bg-black/90 px-3 py-1 border border-green-500/50";
+        return "caption-theme-typewriter";
       case "Bold White":
       default:
-        return "text-white drop-shadow-[0_4px_6px_rgba(0,0,0,1)]";
+        return "caption-theme-bold";
     }
   }
 
   // 9-grid positioning for the on-screen caption preview
   function getPositionClass() {
     const row = position ? position[0] : "m";
-    const map = { t: "top-12", m: "top-1/2 -translate-y-1/2", b: "bottom-16" };
-    return map[row] || "top-1/2 -translate-y-1/2";
+    const map = { t: "items-start", m: "items-center", b: "items-end" };
+    return map[row] || "items-center";
   }
 
   function getAlignClass() {
     const col = position ? position[1] : "c";
-    if (col === "l") return "items-start text-left";
-    if (col === "r") return "items-end text-right";
-    return "items-center text-center";
+    if (col === "l") return "justify-start text-left";
+    if (col === "r") return "justify-end text-right";
+    return "justify-center text-center";
   }
 
   if (!activeClip) return null;
@@ -213,80 +213,98 @@ export default function Editor() {
     aspectRatio === "9:16" ? "aspect-[9/16] h-[min(580px,58vh)]" : aspectRatio === "1:1" ? "aspect-square h-[min(440px,58vh)]" : "aspect-video h-[min(320px,58vh)]";
 
   return (
-    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col md:flex-row gap-6 p-6 max-w-[1600px] mx-auto text-text-primary">
-      <p className="hidden md:block fixed top-5 right-6 z-50 font-mono text-xs uppercase tracking-widest text-accent-2">step 04</p>
-      <div className="w-full md:w-80 md:h-full flex flex-col gap-4 min-h-0">
-        <button
-          onClick={() => navigate("/select")}
-          className="text-xs font-mono uppercase tracking-wider text-text-secondary hover:text-white text-left transition-colors flex items-center gap-1 flex-shrink-0"
-        >
-          ← Back to clips
-        </button>
+    <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col md:flex-row bg-bg">
+      {/* Left Panel — Controls */}
+      <div className="w-full md:w-80 md:h-full flex flex-col border-r border-border bg-bg-elevated/50">
+        {/* Back button + tabs */}
+        <div className="flex-shrink-0 p-4 border-b border-border">
+          <button
+            onClick={() => navigate("/select")}
+            className="btn btn-ghost btn-sm mb-4 text-caption"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Back to clips
+          </button>
 
-        <div className="bg-surface border border-border rounded-xl flex-1 flex flex-col overflow-hidden min-h-0">
-          <div className="flex border-b border-border bg-surface-2/50 flex-shrink-0">
+          <div className="tabs">
             <button
               onClick={() => setActiveTab("style")}
-              className={`flex-1 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
-                activeTab === "style" ? "border-accent text-accent font-bold bg-surface" : "border-transparent text-text-secondary hover:text-white"
-              }`}
+              className={`tab ${activeTab === "style" ? "active" : ""}`}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="13.5" cy="6.5" r=".5" fill="currentColor" />
+                <circle cx="17.5" cy="10.5" r=".5" fill="currentColor" />
+                <circle cx="8.5" cy="7.5" r=".5" fill="currentColor" />
+                <circle cx="6.5" cy="12.5" r=".5" fill="currentColor" />
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.555C21.965 6.012 17.461 2 12 2z" />
+              </svg>
               Style
             </button>
             <button
               onClick={() => setActiveTab("transcript")}
-              className={`flex-1 py-3 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors ${
-                activeTab === "transcript" ? "border-accent text-accent font-bold bg-surface" : "border-transparent text-text-secondary hover:text-white"
-              }`}
+              className={`tab ${activeTab === "transcript" ? "active" : ""}`}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 7V4h16v3M9 20h6M12 4v16" />
+              </svg>
               Transcript
             </button>
           </div>
+        </div>
 
+        {/* Scrollable content */}
+        <div className="flex-1 overflow-y-auto p-4">
           {activeTab === "style" && (
-            <div className="p-5 overflow-y-auto space-y-6 min-h-0">
+            <div className="space-y-6">
+              {/* Caption Theme */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Theme</p>
+                <label className="label">Caption Theme</label>
                 <div className="grid grid-cols-2 gap-2">
                   {["Bold White", "Classic", "Neon", "Typewriter"].map((t) => (
                     <button
                       key={t}
                       onClick={() => setTheme(t)}
-                      className={`py-2.5 px-3 text-xs rounded-lg border transition-all text-left ${
+                      className={`py-3 px-3 rounded-lg border transition-all text-left ${
                         theme === t
-                          ? "border-accent-2 bg-accent-2/10 text-white font-medium"
-                          : "border-border-strong text-text-secondary hover:border-text-secondary"
+                          ? "border-accent bg-accent-muted text-text-primary"
+                          : "border-border bg-bg-card text-text-secondary hover:border-border-strong"
                       }`}
                     >
-                      <span className="font-bold block mb-0.5">Aa</span>
-                      <span className="text-[11px] block">{t}</span>
+                      <span className="font-display block text-sm font-medium mb-1">Aa</span>
+                      <span className="text-label">{t}</span>
                     </button>
                   ))}
                 </div>
               </div>
 
+              {/* Highlight Color */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Highlight Color</p>
+                <label className="label">Highlight Color</label>
                 <div className="flex flex-wrap gap-2.5">
                   {["#EAB308", "#22C55E", "#EF4444", "#3B82F6", "#A855F7", "#06B6D4", "#FFFFFF"].map((color) => (
                     <button
                       key={color}
                       onClick={() => setHighlightColor(color)}
-                      className={`w-7 h-7 rounded-full border-2 transition-all ${
-                        highlightColor === color ? "border-white scale-110 shadow-lg" : "border-transparent opacity-80 hover:opacity-100 hover:scale-105"
+                      className={`w-8 h-8 rounded-full border-2 transition-all ${
+                        highlightColor === color ? "border-accent scale-110 shadow-lg" : "border-border hover:scale-105"
                       }`}
                       style={{ backgroundColor: color }}
+                      aria-label={`Select highlight color ${color}`}
                     />
                   ))}
                 </div>
               </div>
 
+              {/* Font Family */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Font Family</p>
+                <label className="label">Font Family</label>
                 <select
                   value={fontFamily}
                   onChange={(e) => setFontFamily(e.target.value)}
-                  className="w-full bg-surface-2 border border-border-strong rounded-lg p-3 text-xs text-white focus:outline-none focus:border-accent-2"
+                  className="input"
                 >
                   <option value="Impact">Impact (Bold & Heavy)</option>
                   <option value="Inter">Inter (Modern & Clean)</option>
@@ -295,30 +313,34 @@ export default function Editor() {
                 </select>
               </div>
 
+              {/* Font Size */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Font Size</p>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="label">Font Size</label>
+                <div className="radio-group grid grid-cols-3 gap-2">
                   {[
                     { label: "Small", class: "text-lg" },
                     { label: "Medium", class: "text-2xl" },
                     { label: "Large", class: "text-4xl" },
                   ].map((s) => (
-                    <button
-                      key={s.label}
-                      onClick={() => setFontSize(s.class)}
-                      className={`py-2 text-xs border rounded-lg transition-colors ${
-                        fontSize === s.class ? "border-accent bg-accent/10 text-white" : "border-border-strong text-text-secondary"
-                      }`}
-                    >
-                      {s.label}
-                    </button>
+                    <div key={s.label} className="radio-option">
+                      <input
+                        type="radio"
+                        id={`font-size-${s.label}`}
+                        name="fontSize"
+                        checked={fontSize === s.class}
+                        onChange={() => setFontSize(s.class)}
+                      />
+                      <label htmlFor={`font-size-${s.label}`} className="radio-option-label py-2.5">
+                        {s.label}
+                      </label>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              {/* 3x3 position grid */}
+              {/* Caption Position */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Position</p>
+                <label className="label">Caption Position</label>
                 <div className="grid grid-cols-3 gap-1.5">
                   {POSITION_ROWS.map((r) =>
                     POSITION_COLS.map((c) => {
@@ -329,11 +351,11 @@ export default function Editor() {
                           key={key}
                           onClick={() => setPosition(key)}
                           title={key}
-                          className={`h-9 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                            active ? "border-accent bg-accent/10" : "border-border-strong hover:border-text-secondary"
+                          className={`h-10 rounded-md border flex items-center justify-center transition-colors ${
+                            active ? "border-accent bg-accent-muted" : "border-border bg-bg-card hover:border-border-strong"
                           }`}
                         >
-                          <span className={`w-1.5 h-1.5 rounded-full ${active ? "bg-accent" : "bg-text-muted"}`} />
+                          <span className={`w-2 h-2 rounded-full ${active ? "bg-accent" : "bg-text-muted"}`} />
                         </button>
                       );
                     })
@@ -341,55 +363,58 @@ export default function Editor() {
                 </div>
               </div>
 
-              {/* Caption background */}
+              {/* Caption Background */}
               <div>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Caption Background</p>
-                <div className="grid grid-cols-3 gap-2">
+                <label className="label">Caption Background</label>
+                <div className="radio-group grid grid-cols-3 gap-2">
                   {[
                     { key: "none", label: "None" },
                     { key: "semi", label: "Semi" },
                     { key: "solid", label: "Solid" },
                   ].map((opt) => (
-                    <button
-                      key={opt.key}
-                      onClick={() => setCaptionBg(opt.key)}
-                      className={`py-2 text-xs border rounded-lg transition-colors cursor-pointer ${
-                        captionBg === opt.key ? "border-accent bg-accent/10 text-white" : "border-border-strong text-text-secondary"
-                      }`}
-                    >
-                      {opt.label}
-                    </button>
+                    <div key={opt.key} className="radio-option">
+                      <input
+                        type="radio"
+                        id={`caption-bg-${opt.key}`}
+                        name="captionBg"
+                        checked={captionBg === opt.key}
+                        onChange={() => setCaptionBg(opt.key)}
+                      />
+                      <label htmlFor={`caption-bg-${opt.key}`} className="radio-option-label py-2.5">
+                        {opt.label}
+                      </label>
+                    </div>
                   ))}
                 </div>
               </div>
 
-              {/* Saved presets */}
-              <div>
+              {/* Presets */}
+              <div className="pt-2 border-t border-border">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary">Presets</p>
+                  <label className="label">Presets</label>
                   <button
                     onClick={saveCurrentPreset}
-                    className="text-[11px] font-mono text-accent-2 border border-accent-2/40 rounded px-2 py-1 hover:bg-accent-2/10 transition-colors cursor-pointer"
+                    className="btn btn-ghost btn-sm text-caption"
                   >
                     + Save current
                   </button>
                 </div>
                 {savedPresets.length === 0 ? (
-                  <p className="text-[11px] text-text-muted">No presets saved yet.</p>
+                  <p className="text-body-sm text-text-muted">No presets saved yet.</p>
                 ) : (
                   <div className="space-y-1.5">
                     {savedPresets.map((p, i) => (
-                      <div key={i} className="flex items-center border border-border-strong rounded-lg p-2">
+                      <div key={i} className="flex items-center border border-border rounded-lg bg-bg-card p-2">
                         <button
                           onClick={() => loadPreset(p)}
-                          className="text-[11px] text-white text-left hover:text-accent-2 transition-colors flex-1 cursor-pointer"
+                          className="text-body-sm text-text-primary text-left hover:text-accent-glow transition-colors flex-1"
                         >
                           {p.name}
                         </button>
                         <button
                           onClick={() => deletePreset(i)}
-                          className="text-[10px] text-text-muted hover:text-red-400 px-1 cursor-pointer"
-                          title="Delete preset"
+                          className="text-label text-text-muted hover:text-error px-1"
+                          aria-label="Delete preset"
                         >
                           ✕
                         </button>
@@ -402,8 +427,8 @@ export default function Editor() {
           )}
 
           {activeTab === "transcript" && (
-            <div className="p-4 overflow-y-auto space-y-4 min-h-0">
-              <p className="text-xs text-text-muted leading-relaxed">
+            <div className="space-y-3">
+              <p className="text-body-sm text-text-muted">
                 Click any line to preview it on the video. Edit text directly to fix mistakes.
               </p>
 
@@ -412,31 +437,31 @@ export default function Editor() {
                   key={line.id || index}
                   onClick={() => handleLineClick(index)}
                   className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                    activeLineIndex === index ? "border-accent bg-accent/5 shadow-md" : "border-border bg-surface-2/40 hover:border-border-strong"
+                    activeLineIndex === index ? "border-accent bg-accent-muted" : "border-border bg-bg-card hover:border-border-strong"
                   }`}
                 >
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-mono text-[10px] text-accent-2">{line.startTime} - {line.endTime}</span>
-                    {activeLineIndex === index && <span className="text-[10px] font-mono text-accent">● Active</span>}
+                    <span className="text-label text-accent-cyan">{line.startTime} – {line.endTime}</span>
+                    {activeLineIndex === index && <span className="text-label text-accent-glow">● Active</span>}
                   </div>
 
                   <div className="space-y-2">
                     <div>
-                      <label className="text-[10px] font-mono text-text-muted block mb-0.5">Main Text</label>
+                      <label className="text-label text-text-muted block mb-1">Main Text</label>
                       <input
                         type="text"
                         value={line.text}
                         onChange={(e) => handleTranscriptChange(index, "text", e.target.value)}
-                        className="w-full bg-surface border border-border-strong rounded px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-accent-2"
+                        className="input input-sm"
                       />
                     </div>
                     <div>
-                      <label className="text-[10px] font-mono text-text-muted block mb-0.5">Highlighted Keyword</label>
+                      <label className="text-label text-text-muted block mb-1">Highlighted Keyword</label>
                       <input
                         type="text"
                         value={line.highlight}
                         onChange={(e) => handleTranscriptChange(index, "highlight", e.target.value)}
-                        className="w-full bg-surface border border-border-strong rounded px-2.5 py-1.5 text-xs font-bold text-accent focus:outline-none focus:border-accent-2"
+                        className="input input-sm text-accent"
                       />
                     </div>
                   </div>
@@ -447,100 +472,134 @@ export default function Editor() {
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-black/40 border border-border rounded-xl min-h-0">
-        <p className="font-mono text-xs uppercase tracking-widest text-accent-2 mb-6">Interactive Preview</p>
-
-        <div
-          className={`relative bg-surface-2 border border-border-strong rounded-lg overflow-hidden shadow-2xl transition-all duration-300 flex items-center justify-center ${previewHeight}`}
-        >
-          <video
-            ref={videoRef}
-            src={videoSrc}
-            onTimeUpdate={handleTimeUpdate}
-            className="absolute inset-0 w-full h-full object-cover z-0"
-            autoPlay
-            loop
-            muted
-            controls
-            playsInline
-          />
-
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/70 z-10 pointer-events-none" />
-
-          {watermark && (
-            <div className="absolute top-4 right-4 z-20 pointer-events-none opacity-60">
-              <span className="font-mono text-[10px] bg-black/60 text-white px-2 py-1 rounded border border-white/20">
-                Clipforge
-              </span>
-            </div>
-          )}
+      {/* Center Panel — Preview */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6 bg-bg min-h-0">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-4">
+            <span className="text-label text-accent-glow">Interactive Preview</span>
+          </div>
 
           <div
-            className={`absolute left-0 w-full px-6 z-20 flex flex-col justify-center pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}
+            className={`relative bg-bg-surface border border-border rounded-xl overflow-hidden shadow-lg transition-all duration-300 flex items-center justify-center ${previewHeight}`}
           >
-            <p
-              style={{ fontFamily: fontFamily }}
-              className={`font-bold uppercase tracking-wide leading-tight uppercase ${fontSize} ${getThemeClasses()}`}
-            >
-              {currentLine.text}{" "}
-              <span style={{ color: highlightColor }}>{currentLine.highlight}</span>
-            </p>
+            <video
+              ref={videoRef}
+              src={videoSrc}
+              onTimeUpdate={handleTimeUpdate}
+              className="absolute inset-0 w-full h-full object-cover z-0"
+              autoPlay
+              loop
+              muted
+              controls
+              playsInline
+            />
+
+            {/* Caption overlay */}
+            <div className={`absolute inset-0 z-20 flex flex-col justify-center pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}>
+              <div className={`caption-overlay ${getThemeClasses()}`}>
+                <p className="caption-text">
+                  {currentLine.text}{" "}
+                  <span className="caption-highlight" style={{ color: highlightColor }}>{currentLine.highlight}</span>
+                </p>
+              </div>
+            </div>
+
+            {watermark && (
+              <div className="watermark">
+                Clipforge
+              </div>
+            )}
+          </div>
+
+          {/* Ratio indicator */}
+          <div className="flex items-center justify-center gap-2 mt-4">
+            <span className="badge badge-cyan">{aspectRatio}</span>
+            <span className="text-label text-text-muted">1080p HD</span>
           </div>
         </div>
       </div>
 
-      <div className="w-full md:w-80 md:h-full flex flex-col gap-4 min-h-0">
-        <button
-          type="button"
-          onClick={handleExport}
-          disabled={exporting}
-          className="w-full bg-accent text-bg font-bold text-sm rounded-lg py-4 shadow-[0_0_15px_rgba(163,230,53,0.3)] hover:shadow-[0_0_25px_rgba(163,230,53,0.5)] transition-all disabled:opacity-50 cursor-pointer flex-shrink-0"
-        >
-          {exporting ? "Rendering Final Video…" : "⚡ Export Video"}
-        </button>
-
-        {exportError && (
-          <div className="bg-red-950/40 border border-red-500/40 rounded-lg px-3.5 py-3 text-[11px] text-red-300 leading-relaxed flex-shrink-0">
-            <p className="font-mono text-[10px] uppercase tracking-wide text-red-400 mb-1">Export failed</p>
-            {exportError}
-          </div>
-        )}
-
-        <div className="bg-surface border border-border rounded-xl p-5 space-y-4 flex-shrink-0">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-wide text-text-secondary mb-3">Branding</p>
-            <label className="flex items-center justify-between p-3 border border-border-strong rounded-lg bg-surface-2 cursor-pointer">
-              <span className="text-xs text-white">Include Watermark</span>
-              <input
-                type="checkbox"
-                checked={watermark}
-                onChange={(e) => setWatermark(e.target.checked)}
-                className="accent-accent w-4 h-4"
-              />
+      {/* Right Panel — Export */}
+      <div className="w-full md:w-80 md:h-full flex flex-col border-l border-border bg-bg-elevated/50">
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="pt-2">
+            <label className="label">Branding</label>
+            <label className="flex items-center justify-between p-3 border border-border rounded-lg bg-bg-card cursor-pointer">
+              <span className="text-body-sm text-text-primary">Include Watermark</span>
+              <span className="toggle">
+                <input
+                  type="checkbox"
+                  checked={watermark}
+                  onChange={(e) => setWatermark(e.target.checked)}
+                />
+                <span className="toggle-track" />
+                <span className="toggle-thumb" />
+              </span>
             </label>
           </div>
-          <div className="border-t border-border pt-4 space-y-2">
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Selected Preset</span>
-              <span className="text-white font-mono">{theme}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Clip Request</span>
-              <span className="text-white font-mono">{clipCount} × {clipLength === "auto" ? "Auto" : `${clipLength}s`}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Caption Language</span>
-              <span className="text-white font-mono">{captionLang}</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Caption Lines</span>
-              <span className="text-white font-mono">{transcriptLines.length} Segments</span>
-            </div>
-            <div className="flex justify-between text-[11px]">
-              <span className="text-text-muted">Target Resolution</span>
-              <span className="text-accent-2 font-mono">1080p HD</span>
+
+          <div className="divider" />
+
+          <div className="space-y-2">
+            <label className="label">Edit Summary</label>
+            <div className="space-y-1.5">
+              {[
+                { label: "Selected Preset", value: theme },
+                { label: "Clip Request", value: `${clipCount} × ${clipLength === "auto" ? "Auto" : `${clipLength}s`}` },
+                { label: "Caption Lang", value: captionLang },
+                { label: "Caption Lines", value: `${transcriptLines.length} segments` },
+                { label: "Target Res", value: "1080p HD" },
+              ].map((item) => (
+                <div key={item.label} className="flex justify-between items-center text-body-sm">
+                  <span className="text-text-muted">{item.label}</span>
+                  <span className="text-text-primary font-mono text-caption">{item.value}</span>
+                </div>
+              ))}
             </div>
           </div>
+        </div>
+
+        {/* Export button - fixed at bottom */}
+        <div className="flex-shrink-0 p-4 border-t border-border space-y-3">
+          {exportError && (
+            <div className="flex items-start gap-2 p-3 bg-error-muted border border-error/30 rounded-lg">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--color-error)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="flex-shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <p className="text-label text-error flex-1">{exportError}</p>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={exporting}
+            className="btn btn-primary w-full py-4 text-base disabled:opacity-50"
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" strokeOpacity="0.25" />
+                  <path d="M12 2a10 10 0 0 1 10 10" strokeLinecap="round" />
+                </svg>
+                Rendering Final Video…
+              </>
+            ) : (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-2">
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" />
+                </svg>
+                Export Video
+              </>
+            )}
+          </button>
+
+          <p className="text-label text-text-muted text-center">
+            Step 4 of 4 • Final render
+          </p>
         </div>
       </div>
     </div>
