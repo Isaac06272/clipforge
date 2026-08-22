@@ -22,8 +22,7 @@ export default function Editor() {
   const [highlightColor, setHighlightColor] = useState("#EAB308");
   const [fontFamily, setFontFamily] = useState("Impact");
   const [fontSize, setFontSize] = useState("text-2xl");
-  const [position, setPosition] = useState("mc"); // 9-grid key
-  const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
+    const [captionBg, setCaptionBg] = useState("none"); // none | semi | solid
   const [aspectRatio, setAspectRatio] = useState(activeClip?.ratio || "9:16");
   const [watermark, setWatermark] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -193,21 +192,6 @@ export default function Editor() {
     }
   }
 
-  // 9-grid positioning for the on-screen caption preview
-  // In flex-col: justify-* = vertical (top/middle/bottom), items-* = horizontal (left/center/right)
-  function getPositionClass() {
-    const row = position ? position[0] : "m";
-    const map = { t: "justify-start", m: "justify-center", b: "justify-end" };
-    return map[row] || "justify-center";
-  }
-
-  function getAlignClass() {
-    const col = position ? position[1] : "c";
-    if (col === "l") return "items-start text-left";
-    if (col === "r") return "items-end text-right";
-    return "items-center text-center";
-  }
-
   function getFontSizePx() {
     const map = { "text-lg": "1.125rem", "text-2xl": "1.5rem", "text-4xl": "2.25rem" };
     return map[fontSize] || "1.5rem";
@@ -344,31 +328,6 @@ export default function Editor() {
                 </div>
               </div>
 
-              {/* Caption Position */}
-              <div>
-                <label className="label">Caption Position</label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {POSITION_ROWS.map((r) =>
-                    POSITION_COLS.map((c) => {
-                      const key = r + c;
-                      const active = position === key;
-                      return (
-                        <button
-                          key={key}
-                          onClick={() => setPosition(key)}
-                          title={key}
-                          className={`h-10 rounded-md border flex items-center justify-center transition-colors ${
-                            active ? "border-accent bg-accent-muted" : "border-border bg-bg-card hover:border-border-strong"
-                          }`}
-                        >
-                          <span className={`w-2 h-2 rounded-full ${active ? "bg-accent" : "bg-text-muted"}`} />
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
               {/* Caption Background */}
               <div>
                 <label className="label">Caption Background</label>
@@ -501,7 +460,7 @@ export default function Editor() {
             />
 
             {/* Caption overlay */}
-            <div className={`absolute inset-0 z-20 flex flex-col pointer-events-none transition-all duration-300 ${getPositionClass()} ${getAlignClass()}`}>
+            <div className="absolute inset-0 z-20 pointer-events-none transition-all duration-300">
               <div className={`caption-overlay ${getThemeClasses()}`}>
                 <p className="caption-text" style={{ fontFamily, fontSize: getFontSizePx(), padding: captionBg === 'none' ? 0 : 'var(--space-2) var(--space-4)', backgroundColor: captionBg === 'solid' ? 'rgba(0,0,0,0.8)' : captionBg === 'semi' ? 'rgba(0,0,0,0.5)' : 'transparent', borderRadius: captionBg !== 'none' ? 'var(--radius-md)' : 0 }}>
                   {currentLine.text}{" "}
